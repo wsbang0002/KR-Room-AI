@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.vercel/
+*.log
+apify-latest.json
+# Preserve provided real listings locally; rights not reviewed for public GitHub.
+data/listings.json
+backups/
+*backup*.json

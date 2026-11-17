@@ -1,0 +1,18 @@
+{
+  "name": "knu-room-ai",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server.js",
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test",
+    "import": "node scripts/import-apify.js",
+    "redis:inspect": "node --env-file-if-exists=.env scripts/redis-inspect.js",
+    "redis:backup": "node --env-file-if-exists=.env scripts/redis-backup.js",
+    "redis:restore": "node --env-file-if-exists=.env scripts/redis-restore.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

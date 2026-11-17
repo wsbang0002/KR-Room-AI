@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {checkApifyBudget} from '../lib/apify-budget.js';
+const env = {ENABLE_LIVE_COLLECTION:'true', APIFY_TOKEN:'test-only'};
+const reply = (spent, limit=5) => async () => ({ok:true,json:async()=>({data:{limits:{maxMonthlyUsageUsd:limit},current:{monthlyUsageUsd:spent}}})});
+test('disabled by default', async()=>assert.equal((await checkApifyBudget({env:{}})).code,'COLLECTION_DISABLED'));
+test('hard limit above $5 fails closed', async()=>assert.equal((await checkApifyBudget({env,fetcher:reply(0,10)})).code,'HARD_LIMIT_NOT_SET'));
+test('at $4.2 with $0.5 estimate blocks', async()=>assert.equal((await checkApifyBudget({env,fetcher:reply(4.2)})).code,'BUDGET_EXHAUSTED'));
+test('at $3.5 with $0.5 estimate allows', async()=>assert.equal((await checkApifyBudget({env,fetcher:reply(3.5)})).allowed,true));
+test('usage lookup failure fails closed', async()=>assert.equal((await checkApifyBudget({env,fetcher:async()=>{throw Error('network');}})).code,'LIMIT_LOOKUP_FAILED'));
+test('invalid amounts fail closed', async()=>assert.equal((await checkApifyBudget({env,fetcher:reply(NaN)})).code,'INVALID_LIMIT_DATA'));

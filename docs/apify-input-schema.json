@@ -1,0 +1,195 @@
+{
+  "title": "Dabang Property Scraper",
+  "description": "Scrape Dabang (다방) Korean real-estate into clean structured datasets — rooms, officetels and apartments with deposit/rent (월세·전세), exact coordinates, addresses, nearest subway and photos. One run, one clean dataset out. No account or API key needed.\n\n🎯 **Use Cases:** rental market research · investment comps · price tracking · lead generation · proptech datasets · relocation search\n\n✨ **More by SIÁN Agency:**\n- [Naver Land Property Scraper](https://apify.com/sian.agency/naver-land-property-scraper?fpr=sian) — Korea's largest portal\n- [KB Land Property Scraper](https://apify.com/sian.agency/kbland-property-scraper?fpr=sian) — KB real-estate listings\n- [Peterpan Property Scraper](https://apify.com/sian.agency/peterpan-property-scraper?fpr=sian) — direct-deal rentals\n- [Browse all SIÁN actors →](https://apify.com/sian.agency?fpr=sian)\n\n⭐ **Love our actors?** Leave a [5-star review](https://apify.com/sian.agency/dabang-property-scraper/reviews) — it helps us build more features for you.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "scrapeMode": {
+      "title": "🔭 Scrape mode",
+      "type": "string",
+      "description": "🔭 **OVERVIEW** (recommended, cheapest): paginate the map search and return rich listing cards — price, type, neighborhood, approximate location, photos and flags. Each card already carries most of the data.\n\n🔎 **DETAIL**: everything in Overview PLUS the full listing — exclusive area, rooms & baths, total floors, full description, options, exact location and nearest subway. Unfetchable listings are billed as Overview.",
+      "editor": "select",
+      "enum": [
+        "overview",
+        "detail"
+      ],
+      "enumTitles": [
+        "🔭 Overview — fast & cheap (recommended)",
+        "🔎 Detail — full listing: area, rooms, description, exact location"
+      ],
+      "default": "overview"
+    },
+    "category": {
+      "title": "🏠 Property category",
+      "type": "string",
+      "description": "🏠 Which Dabang surface to scrape.\n\n- **one-two** — studios & two-rooms (원룸·투룸), the default residential rental surface\n- **officetel** — 오피스텔 units\n- **apt** — apartment complexes (아파트)",
+      "editor": "select",
+      "enum": [
+        "one-two",
+        "officetel",
+        "apt"
+      ],
+      "enumTitles": [
+        "🛏️ Rooms (원룸·투룸)",
+        "🏢 Officetel (오피스텔)",
+        "🏬 Apartment (아파트)"
+      ],
+      "default": "one-two"
+    },
+    "place": {
+      "title": "🔍 Place / neighborhood name",
+      "type": "string",
+      "description": "🔍 **SEARCH BY PLACE:** A Korean place, district or station name (e.g. `강남구`, `역삼동`, `홍대입구역`). The actor resolves it to a map area automatically.\n\n💡 **TIP:** Leave blank to use the default Gangnam (강남) area, or provide a center point / search URL instead.",
+      "editor": "textfield",
+      "example": "강남구",
+      "sectionCaption": "📍 Where to search",
+      "sectionDescription": "Pick ONE: a place name, a center point, or a captured search URL. If none is given, a default Gangnam area is used."
+    },
+    "centerLat": {
+      "title": "📐 Center latitude",
+      "type": "number",
+      "description": "📐 Latitude of the map center to search around (used with Center longitude). Overrides Place when both lat/lng are set.",
+      "editor": "number",
+      "example": 37.498
+    },
+    "centerLng": {
+      "title": "📐 Center longitude",
+      "type": "number",
+      "description": "📐 Longitude of the map center to search around (used with Center latitude).",
+      "editor": "number",
+      "example": 127.028
+    },
+    "searchUrl": {
+      "title": "🔗 Captured Dabang search URL (advanced)",
+      "type": "string",
+      "description": "🔗 **ADVANCED:** Paste a captured Dabang map/list API URL (`…/room-list/category/<cat>/bbox?filters=…&bbox=…`). The actor preserves its exact area + filters. Overrides Place / Center.",
+      "editor": "textfield"
+    },
+    "sellingTypes": {
+      "title": "💳 Deal type (월세 / 전세 / 매매)",
+      "type": "array",
+      "description": "💳 Which deal types to include.\n\n- **MONTHLY_RENT** — 월세 (monthly rent + deposit)\n- **LEASE** — 전세 (jeonse / charter, large deposit, no monthly)\n- **SHORT_RENT** — 단기 (short-term)\n- **SELL** — 매매 (sale price; officetel & apartment categories)",
+      "editor": "select",
+      "items": {
+        "type": "string",
+        "enum": [
+          "MONTHLY_RENT",
+          "LEASE",
+          "SHORT_RENT",
+          "SELL"
+        ],
+        "enumTitles": [
+          "월세 Monthly rent",
+          "전세 Jeonse",
+          "단기 Short-term",
+          "매매 Sale"
+        ]
+      },
+      "default": [
+        "MONTHLY_RENT",
+        "LEASE"
+      ],
+      "sectionCaption": "🎛️ Filters",
+      "sectionDescription": "Optional. Narrow results by deal type, price, room type and amenities. Amounts are in 만원 (10,000 KRW). Filter fields adapt to the property category (rooms / officetel / apartment), matching Dabang's live filter set."
+    },
+    "roomTypes": {
+      "title": "🛏️ Room type",
+      "type": "array",
+      "description": "🛏️ Room layouts to include (원룸 / 투룸 / 쓰리룸…).",
+      "editor": "select",
+      "items": {
+        "type": "string",
+        "enum": [
+          "ONE_ROOM",
+          "TWO_ROOM",
+          "THREE_ROOM",
+          "FOUR_ROOM",
+          "OFFICETEL",
+          "APT"
+        ],
+        "enumTitles": [
+          "원룸 One-room",
+          "투룸 Two-room",
+          "쓰리룸 Three-room",
+          "포룸+ Four-room+",
+          "오피스텔 Officetel",
+          "아파트 Apartment"
+        ]
+      },
+      "default": [
+        "ONE_ROOM",
+        "TWO_ROOM"
+      ]
+    },
+    "depositMin": {
+      "title": "💰 Deposit min (만원)",
+      "type": "integer",
+      "description": "💰 Minimum deposit (보증금) in 만원 (10,000 KRW). e.g. 1000 = 10,000,000 KRW.",
+      "editor": "number",
+      "minimum": 0
+    },
+    "depositMax": {
+      "title": "💰 Deposit max (만원)",
+      "type": "integer",
+      "description": "💰 Maximum deposit (보증금) in 만원 (10,000 KRW).",
+      "editor": "number",
+      "minimum": 0
+    },
+    "rentMin": {
+      "title": "💵 Monthly rent min (만원)",
+      "type": "integer",
+      "description": "💵 Minimum monthly rent (월세) in 만원 (10,000 KRW).",
+      "editor": "number",
+      "minimum": 0
+    },
+    "rentMax": {
+      "title": "💵 Monthly rent max (만원)",
+      "type": "integer",
+      "description": "💵 Maximum monthly rent (월세) in 만원 (10,000 KRW).",
+      "editor": "number",
+      "minimum": 0
+    },
+    "hasElevator": {
+      "title": "🛗 Elevator only",
+      "type": "boolean",
+      "description": "🛗 Only buildings with an elevator.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "canParking": {
+      "title": "🅿️ Parking only",
+      "type": "boolean",
+      "description": "🅿️ Only listings with parking.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "roomUrls": {
+      "title": "🔗 Specific room URLs / IDs (Detail mode)",
+      "type": "array",
+      "description": "🔗 **DETAIL BY URL:** Provide specific Dabang room URLs (`https://www.dabangapp.com/room/<id>`) or bare room IDs to enrich exactly those listings. Use with Detail mode. Overrides the area search.\n\n📋 Click **Bulk edit** to paste one per line.",
+      "editor": "stringList",
+      "uniqueItems": true,
+      "sectionCaption": "🎯 Specific listings (optional)",
+      "sectionDescription": "Detail mode only — enrich a fixed set of rooms instead of searching an area."
+    },
+    "maxResults": {
+      "title": "🔢 Max results",
+      "type": "integer",
+      "description": "🔢 Maximum listings to return.\n\n**FREE users:** up to 25 per run. **PAID users:** unlimited.",
+      "editor": "number",
+      "default": 100,
+      "minimum": 1,
+      "sectionCaption": "⚙️ Limits",
+      "sectionDescription": "Control run size."
+    },
+    "maxPages": {
+      "title": "📄 Max search pages (0 = until Max results)",
+      "type": "integer",
+      "description": "📄 Hard cap on search pages to paginate (24 listings each). 0 = paginate until Max results is reached or there are no more.",
+      "editor": "number",
+      "default": 0,
+      "minimum": 0
+    }
+  },
+  "required": []
+}

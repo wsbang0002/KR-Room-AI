@@ -3,7 +3,7 @@ const fmt=n=>n==null?'미확인':`${Number(n).toLocaleString('ko-KR')}만 원`;
 let controller=null,lastPayload=null,jobId=null;
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;}
 function chip(t){chips.append(make('span','chip',t));}
-function headers(){return {'Content-Type':'application/json',...($('adminKey').value?{Authorization:`Bearer ${$('adminKey').value}`}:{})};}
+function headers(){const key=$('adminKey').value;if(key&&!/^[\x21-\x7e]{24,}$/.test(key))throw Error('관리자 키에는 생성한 영문·숫자 키만 입력하세요. 한글·공백·줄바꿈은 사용할 수 없습니다.');return {'Content-Type':'application/json',...($('adminKey').value?{Authorization:`Bearer ${$('adminKey').value}`}:{})};}
 async function request(url,options={}){const r=await fetch(url,{...options,headers:headers(),signal:controller?.signal});const j=await r.json();if(!r.ok){if(j.region?.candidates){$('regionChoices').replaceChildren();j.region.candidates.forEach(x=>{const b=make('button','',x);b.onclick=()=>{$('location').value=x;submit();};$('regionChoices').append(b);});}throw Error(j.error||'요청 실패');}return j;}
 function payload(){const edits={};for(const key of ['location','destination','maxDeposit','maxRent','maxMonthlyTotal','maxCommuteMinutes','transportMode'])if($(key).value!=='')edits[key]=$(key).value;const cost=Number($('costWeight').value)/100;edits.weights={cost,commute:.85-cost,options:.15};return {query:query.value.trim(),demo:$('demo').checked,edits};}
 function render(data){chips.replaceChildren();cards.replaceChildren();$('unknownCards').replaceChildren();$('regionChoices').replaceChildren();const c=data.conditions;
@@ -47,6 +47,7 @@ $('checkConnections').onclick=async()=>{
  const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
  try{
   const storage=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'storage'})});output.textContent=renderChecks(storage)+'\nGemini 연결 검사 중…';
-  const ai=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini'})});output.textContent=renderChecks({...storage,...ai})+'\n신규 유료 Actor 실행: 없음';
+  const model=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini-model'})});output.textContent=renderChecks({...storage,...model})+'\nGemini 생성 검사 중…';
+  const ai=model.geminiModel?.status==='verified'?await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini'})}):{gemini:{status:'blocked',message:'먼저 모델 접근 검사를 통과해야 생성 요청을 실행합니다.'}};output.textContent=renderChecks({...storage,...model,...ai})+'\n신규 유료 Actor 실행: 없음';
  }catch(e){output.textContent+='\n'+(e.name==='AbortError'?'조회 취소':e.message);}finally{busy(false);}
 };

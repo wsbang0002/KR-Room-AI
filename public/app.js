@@ -44,7 +44,7 @@ $('checkConnections').onclick=async()=>{
  if(!$('adminKey').value)return;
  controller?.abort();controller=new AbortController();busy(true);const output=$('integrationResult');output.textContent='Redis·Apify 연결 검사 중…';
  const statuses={verified:'검증 성공',missing:'환경변수 미설정',blocked:'선행 설정 필요',failed:'검증 실패',partial:'부분 구현'};
- const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
+ const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
  try{
   const storage=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'storage'})});output.textContent=renderChecks(storage)+'\nGemini 연결 검사 중…';
   const ai=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini'})});output.textContent=renderChecks({...storage,...ai})+'\n신규 유료 Actor 실행: 없음';

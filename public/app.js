@@ -24,7 +24,7 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
  if(r.url){const a=make('a','link','원본 매물 확인 ↗');a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';el.append(a);}el.append(make('div','caution',data.mode==='demo'?'가상 데모 · 실제 계약 불가':'계약 가능 여부·가격·위치 미검증'));return el;}
  data.results.forEach((r,i)=>cards.append(card(r,i,false)));data.unverified.forEach((r,i)=>$('unknownCards').append(card(r,i,true)));$('unknownTitle').hidden=!data.unverified.length;
 }
-function busy(value){btn.disabled=value;$('cancel').disabled=!value;btn.textContent=value?'검색 중…':'방 찾아보기 ↗';$('collect').disabled=value||$('demo').checked||!$('adminKey').value;}
+function busy(value){$('checkConnections').disabled=value||!$('adminKey').value;btn.disabled=value;$('cancel').disabled=!value;btn.textContent=value?'검색 중…':'방 찾아보기 ↗';$('collect').disabled=value||$('demo').checked||!$('adminKey').value;}
 async function submit(){if(!query.value.trim()){status.textContent='검색 조건을 입력해 주세요.';return;}controller?.abort();controller=new AbortController();jobId=null;lastPayload=payload();busy(true);status.textContent='조건 분석 및 지역별 매물 검색 중…';try{render(await request('/api/search',{method:'POST',body:JSON.stringify(lastPayload)}));}catch(e){status.textContent=e.name==='AbortError'?'검색 조회를 취소했습니다.':e.message;}finally{busy(false);}}
 async function collect(){controller?.abort();controller=new AbortController();lastPayload=payload();if(lastPayload.demo)return;busy(true);try{
  const cfg=await request('/api/status');if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
@@ -39,3 +39,14 @@ async function collect(){controller?.abort();controller=new AbortController();la
  }catch(e){status.textContent=e.name==='AbortError'?'화면 조회 취소. 이미 시작된 Actor는 Apify Console에서 확인하세요.':e.message;}finally{busy(false);}}
 btn.onclick=submit;$('collect').onclick=collect;$('cancel').onclick=()=>controller?.abort();$('demo').onchange=()=>busy(false);$('adminKey').oninput=()=>busy(false);$('costWeight').oninput=()=>$('costValue').textContent=`${$('costWeight').value}%`;
 query.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')submit();});document.querySelectorAll('[data-example]').forEach(b=>b.onclick=()=>{query.value=b.dataset.example;submit();});
+
+$('checkConnections').onclick=async()=>{
+ if(!$('adminKey').value)return;
+ controller?.abort();controller=new AbortController();busy(true);const output=$('integrationResult');output.textContent='Redis·Apify 연결 검사 중…';
+ const statuses={verified:'검증 성공',missing:'환경변수 미설정',blocked:'선행 설정 필요',failed:'검증 실패',partial:'부분 구현'};
+ const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
+ try{
+  const storage=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'storage'})});output.textContent=renderChecks(storage)+'\nGemini 연결 검사 중…';
+  const ai=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini'})});output.textContent=renderChecks({...storage,...ai})+'\n신규 유료 Actor 실행: 없음';
+ }catch(e){output.textContent+='\n'+(e.name==='AbortError'?'조회 취소':e.message);}finally{busy(false);}
+};

@@ -8,8 +8,9 @@ import collect from './api/collect.js';
 import collectStatus from './api/collect-status.js';
 import listings from './api/listings.js';
 import inspect from './api/redis-inspect.js';
+import integrations from './api/integrations.js';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
-const handlers={'/api/search':search,'/api/status':status,'/api/collect':collect,'/api/collect-status':collectStatus,'/api/listings':listings,'/api/redis-inspect':inspect};
+const handlers={'/api/search':search,'/api/status':status,'/api/collect':collect,'/api/collect-status':collectStatus,'/api/listings':listings,'/api/redis-inspect':inspect,'/api/integrations':integrations};
 const server=http.createServer(async(req,res)=>{
  res.status=code=>{res.statusCode=code;return res;};res.json=value=>{res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(value));};
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');

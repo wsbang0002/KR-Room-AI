@@ -17,10 +17,10 @@
 | 추천 | 완료 | 필수 조건 분리, 50/35/15 가중치, 미확인 후보·정보 근거 비율·수집일·슬라이더. 실제 경로 없는 매물은 시간 미확인 |
 | 지도 | 부분 완료 | OSM 좌표 iframe 구현. 실제 지도 서비스 응답·데이터 위치 정확도는 미검증 |
 | 실제 이동시간 | 부분 완료 | TMAP 도보/자동차 어댑터 Mock 통과, 유료 검색 연결 안 함. 대중교통·목적지 좌표/요금/권한 미구현·미검증 |
-| 전체 자동 테스트 | 완료 | Node 20 및 Node 24: 각각 74/74 통과. 외부 서비스는 Mock, 로컬 HTTP 통합 포함 |
+| 전체 자동 테스트 | 완료 | 로컬 Node 20/24: 각각 74/74. GitHub Windows/Linux × Node 20/22: 4개 작업 모두 74/74. 외부 서비스는 Mock, 로컬 HTTP 통합 포함 |
 | 브라우저 검증 | 완료 | Chromium: 390px 모바일/1440px 데스크톱, 지역 선택·데모·인증·수집 잠금. 가로 넘침·JS 오류 없음 |
-| GitHub main | 부분 완료 | 지정 저장소 wsbang0002/KR-Room-AI 초기화 후 소스 반영 작업. 최종 커밋/CI 상태는 GitHub 히스토리와 최종 답변 참조 |
-| Vercel 실제 배포 | 미검증 | 사용자 확인상 아직 저장소 연결 전. vercel.json과 배포 방법 제공. 배포 URL 미확정 |
+| GitHub main | 완료 | 구현 커밋 `90b2abf1d604bfc2bfd96f4652f509729dc584db`, 45개 파일 반영. GitHub Actions #1의 Windows/Linux × Node 20/22 4개 작업 모두 success |
+| Vercel 실제 배포 | 미검증 | Vercel New Project 접근 후 로그인 필요 확인. 로그인 선택 요청이 진행되지 않아 Import/환경변수 설정/배포 미실행. 배포 URL 미확정 |
 | 과제의 실제 2-API 사용 | 미검증 | Gemini+Apify 인증 실호출 증거 없음. Apify 인정 여부·외부 사용자 시험도 별도 확인 필요 |
 
 ## 수정·추가 파일
@@ -53,3 +53,11 @@
 4. 승인된 테스트 환경에서 Gemini 호출과 최대 10건·$0.50 상한 Actor 1회 실검증. 이번 작업에서는 수행하지 않음.
 5. 목적지 명칭·좌표 확인, 경로 API 현행 요금/무료량·인증·권리 검토 및 비용 제한을 추가한 뒤 TMAP/대중교통 실연결.
 6. GitHub CI 통과 확인과 Vercel 배포 후 실제 URL에서 사용자 흐름 확인. 미완성 연결을 완료로 표기하지 않기.
+
+## 원격 검증 링크
+
+- 소스: https://github.com/wsbang0002/KR-Room-AI
+- 구현 커밋: https://github.com/wsbang0002/KR-Room-AI/commit/90b2abf1d604bfc2bfd96f4652f509729dc584db
+- 통과한 4개 CI 작업: https://github.com/wsbang0002/KR-Room-AI/actions/runs/44028431354
+
+코드 구현과 실제 운영 계정 연결은 구분했습니다. Redis PING/SCAN, Gemini API, Apify 계정 Limits/유료 Run/Dataset, TMAP 실제 호출은 아직 하지 않았습니다. 공개 Actor 메타데이터·공식 문서 조회만 실외부 GET으로 수행했습니다.

@@ -20,7 +20,7 @@
 | 전체 자동 테스트 | 완료 | 로컬 Node 20/24: 각각 74/74. GitHub Windows/Linux × Node 20/22: 4개 작업 모두 74/74. 외부 서비스는 Mock, 로컬 HTTP 통합 포함 |
 | 브라우저 검증 | 완료 | Chromium: 390px 모바일/1440px 데스크톱, 지역 선택·데모·인증·수집 잠금. 가로 넘침·JS 오류 없음 |
 | GitHub main | 완료 | 구현 커밋 `90b2abf1d604bfc2bfd96f4652f509729dc584db`, 45개 파일 반영. GitHub Actions #1의 Windows/Linux × Node 20/22 4개 작업 모두 success |
-| Vercel 실제 배포 | 미검증 | Vercel New Project 접근 후 로그인 필요 확인. 로그인 선택 요청이 진행되지 않아 Import/환경변수 설정/배포 미실행. 배포 URL 미확정 |
+| Vercel 실제 배포 | 완료 | https://kr-room-ai.vercel.app/ 실제 화면·데모 검색·API 검증. 최초 FUNCTION_INVOCATION_FAILED는 framework=null 및 빈 buildCommand 지정 후 해결. Gemini/Apify/Redis 운영 연동은 별도 미검증 |
 | 과제의 실제 2-API 사용 | 미검증 | Gemini+Apify 인증 실호출 증거 없음. Apify 인정 여부·외부 사용자 시험도 별도 확인 필요 |
 
 ## 수정·추가 파일
@@ -61,3 +61,17 @@
 - 통과한 4개 CI 작업: https://github.com/wsbang0002/KR-Room-AI/actions/runs/44028431354
 
 코드 구현과 실제 운영 계정 연결은 구분했습니다. Redis PING/SCAN, Gemini API, Apify 계정 Limits/유료 Run/Dataset, TMAP 실제 호출은 아직 하지 않았습니다. 공개 Actor 메타데이터·공식 문서 조회만 실외부 GET으로 수행했습니다.
+
+## 실제 Vercel 배포 후 검증
+
+사용자가 연결한 https://kr-room-ai.vercel.app/ 의 최초 배포에서 홈페이지·모든 API에 500 FUNCTION_INVOCATION_FAILED가 발생했습니다. `vercel.json`의 `framework: null`, `buildCommand: ""`를 명시해 자동 프레임워크 감지를 끄고 정적 public + api 함수 구성을 적용한 커밋 `1256ed991c66bead64b099c676a70176ca6a14d5`로 자동 재배포 후 해결했습니다.
+
+- 홈페이지, app.js, style.css: 200.
+- /api/status: 200, v0.5.0. Gemini/Apify/Redis 설정 false, 신규 수집 false, 실매물 관리자 전용 true.
+- 데모 POST /api/search: 200, 서울 관악구 해석·월세 40만원 조건·가상 매물 3건. 실제 Chromium 화면에서도 확인.
+- 중구 동명이인 데모 검색: 422.
+- 미인증 실매물 검색/신규 수집/Redis 검사: 각각 401.
+- GET /api/search: 405.
+- 수정 후 로컬 테스트 74/74, Windows/Linux × Node 20/22 CI 4개 작업 모두 success.
+
+외부 유료 호출은 하지 않았습니다. 실제 Redis PING/SCAN과 Gemini/Apify 인증 연동은 환경변수를 등록한 후 검증해야 합니다.

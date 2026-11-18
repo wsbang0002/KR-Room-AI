@@ -37,7 +37,7 @@ test('free search and admin check use only the zero-price route, ignore client o
  assert.equal(url,'https://openrouter.ai/api/v1/chat/completions');
  assert.equal(init.redirect,'error');
  const body=JSON.parse(init.body);
- assert.equal(body.model,'openrouter/free');
+ assert.equal(body.model,'inclusionai/ling-3.2-flash:free');
  assert.equal(body.reasoning.effort,'none');
  assert.equal(body.provider.max_price.prompt,'0');
  assert.equal(body.provider.max_price.completion,'0');

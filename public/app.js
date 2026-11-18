@@ -4,10 +4,165 @@ let controller=null,lastPayload=null,jobId=null;
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;}
 function chip(t){chips.append(make('span','chip',t));}
 function headers(){const key=$('adminKey').value;if(key&&!/^[\x21-\x7e]{24,}$/.test(key))throw Error('관리자 키에는 생성한 영문·숫자 키만 입력하세요. 한글·공백·줄바꿈은 사용할 수 없습니다.');return {'Content-Type':'application/json',...($('adminKey').value?{Authorization:`Bearer ${$('adminKey').value}`}:{})};}
-async function request(url,options={}){const r=await fetch(url,{...options,headers:headers(),signal:controller?.signal});const j=await r.json();if(!r.ok){if(j.region?.candidates){$('regionChoices').replaceChildren();j.region.candidates.forEach(x=>{const b=make('button','',x);b.onclick=()=>{$('location').value=x;submit();};$('regionChoices').append(b);});}throw Error(j.error||'요청 실패');}return j;}
-function payload(){const edits={};for(const key of ['location','destination','maxDeposit','maxRent','maxMonthlyTotal','maxCommuteMinutes','transportMode'])if($(key).value!=='')edits[key]=$(key).value;const cost=Number($('costWeight').value)/100;edits.weights={cost,commute:.85-cost,options:.15};return {query:query.value.trim(),demo:$('demo').checked,edits};}
+async function request(url,options={}){const r=await fetch(url,{...options,headers:headers(),signal:options.signal??controller?.signal});const j=await r.json();if(!r.ok){if(j.region?.candidates){$('regionChoices').replaceChildren();j.region.candidates.forEach(x=>{const b=make('button','',x);b.onclick=()=>{$('location').value=x;submit();};$('regionChoices').append(b);});}throw Error(j.error||'요청 실패');}return j;}
+let selectedDestination=null,placeLookup=null;
+const destinationInput=$('destination');
+
+function showPlaceSource(container,place){
+ if(!place?.sourceUrl?.startsWith('https://'))return;
+ const link=make('a','',place.source||'목적지 좌표 출처');
+ link.href=place.sourceUrl;link.target='_blank';link.rel='noopener noreferrer';
+ container.append(' · ',link);
+}
+
+function clearPlaces(){
+ placeLookup?.abort();
+ placeLookup=null;
+ selectedDestination=null;
+ $('destinationChoices').replaceChildren();
+ $('destinationChoices').hidden=true;
+ $('destinationMessage').textContent='';
+}
+
+async function findPlaces(){
+ clearPlaces();
+ const text=destinationInput.value.trim();
+ if(!text){$('destinationMessage').textContent='목적지 이름 또는 주소를 입력하세요.';destinationInput.focus();return;}
+ const lookup=new AbortController();
+ placeLookup=lookup;
+ const message=$('destinationMessage'),choices=$('destinationChoices');
+ message.textContent='목적지 조회 중…';
+ try{
+  const response=await request('/api/destinations',{method:'POST',body:JSON.stringify({query:text}),signal:lookup.signal});
+  if(placeLookup!==lookup)return;
+  const places=response.destinations.filter(place=>place.verified&&place.id);
+  const prompt=places.length?'주소를 확인하고 도착할 장소를 선택하세요.':'해당 이름으로 좌표를 확인한 장소가 없습니다.';
+  message.textContent=[prompt,response.notice,response.attribution].filter(Boolean).join(' ');
+  for(const place of places){
+   const li=make('li'),button=make('button','','');
+   button.type='button';
+   button.append(make('strong','',place.name),make('small','',place.address||'주소 미확인'));
+   button.onclick=()=>{
+    selectedDestination=place;
+    destinationInput.value=place.name;
+    choices.replaceChildren();
+    choices.hidden=true;
+    message.textContent=['선택한 목적지',place.name,place.address,response.attribution].filter(Boolean).join(' · ');
+    showPlaceSource(message,place);
+    destinationInput.focus();
+   };
+   li.append(button);choices.append(li);
+  }
+  choices.hidden=!places.length;
+ }catch(e){if(placeLookup===lookup)message.textContent=e.message;}
+}
+destinationInput.addEventListener('input',clearPlaces);
+destinationInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();findPlaces();}});
+$('findDestinations').onclick=findPlaces;
+
+function validMapPoint(place){
+ return Number.isFinite(place?.lat)&&place.lat>=32&&place.lat<=39&&Number.isFinite(place?.lng)&&place.lng>=124&&place.lng<=132;
+}
+
+function mapSource({lat,lng}){
+ const params=new URLSearchParams({bbox:[lng-.012,lat-.009,lng+.012,lat+.009].join(','),layer:'mapnik',marker:[lat,lng].join(',')});
+ return 'https://www.openstreetmap.org/export/embed.html?'+params;
+}
+
+function showMap(room,destination){
+ $('mapNotice').textContent=room.approximate?'출발 · 대략적 매물 위치':'출발 · 매물 위치';
+ $('map').src=mapSource(room);
+ const showEnd=destination?.verified&&validMapPoint(destination);
+ $('endMapPanel').hidden=!showEnd;
+ if(showEnd){
+  $('endMapLabel').textContent=['도착',destination.name,destination.address].filter(Boolean).join(' · ');
+  showPlaceSource($('endMapLabel'),destination);
+  $('endMap').src=mapSource(destination);
+ }else $('endMap').removeAttribute('src');
+ const panel=$('mapPanel');panel.hidden=false;panel.open=true;panel.scrollIntoView({block:'nearest'});
+}
+
+function routeSummary(route){
+ if(route?.status!=='success'||route.provider!=='tmap'||!Number.isFinite(route.durationMinutes)||!Number.isFinite(route.distanceMeters))return null;
+ const origin=route.originApproximate?'대략적 매물 위치 기준 ':'';
+ return origin+'도보 예상 '+route.durationMinutes+'분 · '+route.distanceMeters.toLocaleString('ko-KR')+'m';
+}
+
+function routeReason(code){
+ const labels={
+  'disabled':'경로 계산이 꺼져 있습니다.', 'unauthorized':'관리자 인증이 필요합니다.',
+  'unverified-destination':'목적지 좌표 미확인', 'invalid-origin':'매물 좌표 미확인',
+  'authentication':'TMAP 인증 실패', 'missing-key':'TMAP 키 미설정',
+  'daily-limit':'오늘의 경로 호출 한도 도달', 'diagnostic-limit':'오늘의 관리자 검사 한도 도달',
+  'user-rate-limit':'사용자 요청 한도 도달', 'upstream-rate-limit':'TMAP 요청 한도 도달',
+  'concurrent-limit':'다른 경로 계산 중', 'pending':'같은 경로 계산 중', 'cooldown':'최근 조회한 경로',
+  'timeout':'TMAP 응답 지연', 'network':'TMAP 연결 실패', 'upstream-server':'TMAP 서버 오류',
+  'route-not-found':'보행 경로 없음', 'invalid-response':'거리·시간 응답 미확인',
+  'redis-unavailable':'사용량 저장소 연결 실패'
+ };
+ return labels[code]||code;
+}
+
+function checkedAt(value){
+ const date=new Date(value);
+ return value&&Number.isFinite(date.getTime())?date.toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' (한국시간)':'미확인';
+}
+
+function walkDetails(el,room,demo,destination){
+ const route=room.walkingRoute;
+ const summary=routeSummary(route);
+ if(summary&&!demo){
+  el.append(make('p','walk-summary',summary));
+  el.append(make('p','metadata',['TMAP 보행 경로',destination?.name,'계산 '+checkedAt(route.calculatedAt)].filter(Boolean).join(' · ')));
+  return;
+ }
+ const time=room.commuteMinutes==null?'이동시간 미확인':`이동시간 ${room.commuteMinutes}분${demo?' (가상)':''}`;
+ const reason=route?.reason?routeReason(route.reason):'';
+ el.append(make('p','metadata',[time,reason,room.approximate?'대략적 매물 위치':'위치 정확도 확인 필요'].filter(Boolean).join(' · ')));
+}
+
+function addRoomActions(el,room,destination){
+ if(!validMapPoint(room))return;
+ const actions=make('div','room-actions');
+ const map=make('button','room-action','위치 지도 보기');
+ map.type='button';map.onclick=()=>showMap(room,destination);
+ actions.append(map);el.append(actions);
+ if(!room.id||!destination?.id||!destination.verified||!$('adminKey').value)return;
+ const test=make('button','room-action route-diagnose','관리자 도보 경로 검사');
+ test.type='button';
+ const feedback=make('p','hint');
+ feedback.setAttribute('aria-live','polite');
+ actions.append(test);el.append(feedback);
+ test.onclick=async()=>{
+  controller?.abort();controller=new AbortController();busy(true);
+  feedback.textContent='도보 경로 검사 중…';
+  try{
+   const {walking}=await request('/api/status');
+   if(!walking?.keyConfigured){feedback.textContent='TMAP 키 설정을 확인하세요.';return;}
+   const payload={listingId:room.id,destinationId:destination.id,diagnostic:true};
+   if(!walking.enabled&&!walking.diagnosticEnabled){
+    if(walking.oneShotAllowed!==true){feedback.textContent='서버에서 관리자 도보 경로 검사가 잠겨 있습니다.';return;}
+    const approved=window.confirm(
+     'SK Open API 대시보드에서 이 앱의 TMAP Free 보행 경로 권한, 오늘의 잔여 무료 한도와 한도 초과 차단을 확인하셨나요?'+
+     '\n확인을 누르면 선택한 경로 1건을 검사합니다. 실제 호출은 오늘의 사용량에 포함됩니다.'
+    );
+    if(!approved){feedback.textContent='도보 경로 검사를 취소했습니다.';return;}
+    payload.confirmFreePlan=true;
+   }
+   const route=await request('/api/routes/walking',{method:'POST',body:JSON.stringify(payload)});
+   const summary=routeSummary(route);
+   feedback.textContent=summary
+    ? [summary,'TMAP',route.cacheHit?'캐시 적중':'새 계산',checkedAt(route.calculatedAt)].join(' · ')
+    : '이동시간 미확인'+(route.reason?' · '+routeReason(route.reason):'');
+  }catch(e){feedback.textContent=e.name==='AbortError'?'도보 경로 조회를 취소했습니다.':e.message;}
+  finally{busy(false);}
+ };
+}
+
+function payload(){const edits={};for(const key of ['location','destination','maxDeposit','maxRent','maxMonthlyTotal','maxCommuteMinutes','transportMode'])if($(key).value!=='')edits[key]=$(key).value;const cost=Number($('costWeight').value)/100;edits.weights={cost,commute:.85-cost,options:.15};return {query:query.value.trim(),demo:$('demo').checked,edits,...(selectedDestination?{destinationId:selectedDestination.id}:{})};}
 function render(data){chips.replaceChildren();cards.replaceChildren();$('unknownCards').replaceChildren();$('regionChoices').replaceChildren();const c=data.conditions;
- chip(c.location);if(c.destination)chip(`목적지: ${c.destination}`);
+ $('mapPanel').hidden=true;$('map').removeAttribute('src');$('endMap').removeAttribute('src');
+ chip(c.location);if(c.destination)chip('목적지 · '+(c.destinationPlace?.name||c.destination));
  for(const [key,label] of [['maxDeposit','보증금'],['maxMonthlyTotal','월 총비용'],['maxRent','월세']])if(c[key]!=null)chip(`${label} ≤ ${fmt(c[key])}`);
  if(c.maxCommuteMinutes!=null)chip(`${c.transportMode} ≤ ${c.maxCommuteMinutes}분`);
  c.preferredOptions.forEach(x=>chip(`선호: ${x}`));c.requiredOptions.forEach(x=>chip(`필수: ${x}`));chip(`비용 비중 ${Math.round(c.weights.cost*100)}%`);
@@ -19,19 +174,41 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
   'openrouter-cache':'이전에 OpenRouter 무료 모델로 해석한 조건'
  }[data.parser];
  status.textContent=`${data.mode==='demo'?'가상 데모':data.dataSource} · 조건 충족 ${data.results.length}건 / 확인 필요 ${data.unverified.length}건 · ${parserLabel} · ${data.notice} ${(c.warnings||[]).join(' ')}`;
+ const walking=data.walking;
+ if(walking&&walking.status!=='not-requested'){
+  const notes={
+   'destination-ambiguous':'같은 이름의 목적지가 있습니다. 주소를 보고 선택하세요.',
+   'destination-unverified':'목적지 좌표를 확인해야 도보 시간을 계산할 수 있습니다.',
+   disabled:'도보 경로 계산이 꺼져 있어 이동시간을 확인할 수 없습니다.',
+   'no-eligible-listings':'예산·방 조건과 출발 좌표를 모두 확인한 매물이 없어 경로를 조회하지 않았습니다.',
+   calculated:`도보 경로 확인 ${walking.successCount} / ${walking.selectedCount}건`,
+   unconfirmed:'후보 매물의 보행 경로를 확인할 수 없습니다.'
+  };
+  if(notes[walking.status])status.textContent+=' '+notes[walking.status];
+  if(['destination-ambiguous','destination-unverified'].includes(walking.status)){
+   const choose=make('button','room-action','목적지 주소 선택');
+   choose.type='button';
+   choose.onclick=()=>{
+    if(!destinationInput.value&&c.destination)destinationInput.value=c.destination;
+    destinationInput.closest('details').open=true;
+    destinationInput.focus();
+   };
+   $('regionChoices').append(choose);
+  }
+ }
  if(!data.results.length)cards.append(make('div','status','조건이 확인된 매물이 없습니다. 지역·예산을 수정하거나 확인 필요 후보를 살펴보세요.'));
  function card(r,i,unknown){const el=make('article',unknown?'room unknown':'room');const top=make('div','room-top');top.append(make('h3','',r.title));top.append(make('span','pill',unknown?'확인 필요':`추천 ${i+1}순위`));el.append(top);
  el.append(make('div','price',r.total==null?'월 총액 미확인':`월 ${fmt(r.total)}`));el.append(make('p','metadata',`보증금 ${fmt(r.deposit)} · 월세 ${fmt(r.rent)} · 관리비 ${fmt(r.fee)}`));
- el.append(make('p','metadata',`이동시간 ${r.commuteMinutes==null?'미확인':`${r.commuteMinutes}분${data.mode==='demo'?' (가상)':''}`} · ${r.approximate?'대략적 위치':'정확도 확인 필요'}`));
+ walkDetails(el,r,data.mode==='demo',c.destinationPlace);
  el.append(make('p','metadata',`${r.address||'주소 미확인'} · ${r.roomType||'방 유형 미확인'} · ${r.areaM2==null?'면적 미확인':r.areaM2+'㎡'}`));
  el.append(make('p','metadata',`수집일 ${r.collectedAt||'미확인'} · 마지막 확인 ${r.lastSeenAt||'미확인'}${r.syncStatus==='stale'?' (오래된 정보)':''} · 점수 근거 정보 ${Math.round(r.scoreCoverage*100)}%`));
  el.append(make('p','metadata',r.reasons.join(' · ')));if(unknown)el.append(make('p','caution',`필수 정보 미확인: ${r.missingConditions.join(', ')}`));
  const opts=make('div','room-tags');(r.options||[]).forEach(o=>opts.append(make('span','',o)));if(!r.options?.length)opts.append(make('span','','옵션 정보 미확인'));el.append(opts);
- if(r.lat!=null&&r.lng!=null&&data.mode!=='demo'){const map=make('button','','지도에서 대략적 위치 확인');map.onclick=()=>{const delta=.012;$('map').src=`https://www.openstreetmap.org/export/embed.html?bbox=${r.lng-delta},${r.lat-delta},${r.lng+delta},${r.lat+delta}&layer=mapnik&marker=${r.lat},${r.lng}`;$('mapPanel').hidden=false;$('mapPanel').open=true;$('mapNotice').textContent=r.approximate?'대략적인 좌표이며 실제 주소·이동시간을 확인할 수 없습니다.':'수집된 좌표입니다. 정확도와 이동시간은 별도 확인이 필요합니다.';};el.append(map);}
+ if(data.mode!=='demo')addRoomActions(el,r,c.destinationPlace);
  if(r.url){const a=make('a','link','원본 매물 확인 ↗');a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';el.append(a);}el.append(make('div','caution',data.mode==='demo'?'가상 데모 · 실제 계약 불가':'계약 가능 여부·가격·위치 미검증'));return el;}
  data.results.forEach((r,i)=>cards.append(card(r,i,false)));data.unverified.forEach((r,i)=>$('unknownCards').append(card(r,i,true)));$('unknownTitle').hidden=!data.unverified.length;
 }
-function busy(value){$('checkConnections').disabled=value||!$('adminKey').value;btn.disabled=value;$('cancel').disabled=!value;btn.textContent=value?'검색 중…':'방 찾아보기 ↗';$('collect').disabled=value||$('demo').checked||!$('adminKey').value;}
+function busy(value){document.querySelectorAll('.route-diagnose').forEach(b=>{b.disabled=value||!$('adminKey').value;});$('checkConnections').disabled=value||!$('adminKey').value;btn.disabled=value;$('cancel').disabled=!value;btn.textContent=value?'검색 중…':'방 찾아보기 ↗';$('collect').disabled=value||$('demo').checked||!$('adminKey').value;}
 async function submit(){if(!query.value.trim()){status.textContent='검색 조건을 입력해 주세요.';return;}controller?.abort();controller=new AbortController();jobId=null;lastPayload=payload();busy(true);status.textContent='조건 분석 및 지역별 매물 검색 중…';try{render(await request('/api/search',{method:'POST',body:JSON.stringify(lastPayload)}));}catch(e){status.textContent=e.name==='AbortError'?'검색 조회를 취소했습니다.':e.message;}finally{busy(false);}}
 async function collect(){controller?.abort();controller=new AbortController();lastPayload=payload();if(lastPayload.demo)return;busy(true);try{
  const cfg=await request('/api/status');if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
@@ -51,7 +228,13 @@ $('checkConnections').onclick=async()=>{
  if(!$('adminKey').value)return;
  controller?.abort();controller=new AbortController();busy(true);const output=$('integrationResult');output.textContent='Redis·Apify 연결 검사 중…';
  const statuses={verified:'검증 성공',missing:'환경변수 미설정',blocked:'선행 설정 필요',failed:'검증 실패',partial:'부분 구현'};
- const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
+ const routeState=v=>[
+  'TMAP 도보 경로',
+  v.keyConfigured?'키 등록':'키 미등록',v.enabled?'계산 활성':'계산 비활성',
+  `오늘 ${v.usedToday??'미확인'} / ${v.dailyLimit}회`,`검색당 최대 ${v.maxPerSearch}건`,
+  v.cacheAllowed?'캐시 허용':'캐시 비활성',v.diagnosticEnabled?'관리자 경로 검사 활성':v.keyConfigured&&v.oneShotAllowed===true?'관리자 확인 후 경로 1건 검사 가능':'관리자 경로 검사 잠금',v.message
+ ].filter(Boolean).join(' · ');
+ const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>name==='route'&&v.dailyLimit!=null?routeState(v):`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
  try{
   const check=service=>request('/api/integrations',{method:'POST',body:JSON.stringify({service})});
   const storage=await check('storage');

@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {handleWalking} from '../api/routes/walking.js';
+import {DEFAULT_DESTINATION_ID} from '../lib/destinations.js';
+import {statusData} from '../api/status.js';
+import {RESERVE_WALK} from '../lib/walking.js';
+
+const env={ADMIN_API_KEY:'unit-test-admin-secret-for-routes',TMAP_APP_KEY:'test-only'};
+const req={headers:{authorization:'Bearer '+env.ADMIN_API_KEY}};
+const ids={listingId:'listing-1',destinationId:DEFAULT_DESTINATION_ID};
+const unexpected=()=>assert.fail('Unexpected upstream request');
+
+test('walking endpoint accepts only IDs and authenticates a diagnostic in public mode',async()=>{
+ for(const extra of [{lat:37},{destination:{lat:37}},{diagnostic:'true'},{confirmFreePlan:true}]){
+  await assert.rejects(handleWalking({...ids,...extra},{req,env,fetcher:unexpected}),{status:400});
+ }
+ await assert.rejects(handleWalking({...ids,diagnostic:true,confirmFreePlan:true},{
+  req:{headers:{}},env:{...env,DATA_RIGHTS_REVIEWED:'true'},fetcher:unexpected
+ }),{status:401});
+ const off=await handleWalking(ids,{req,env,fetcher:unexpected});
+ assert.equal(off.reason,'disabled');
+ const missingRedis=await handleWalking(ids,{req,env:{...env,ENABLE_WALKING_ROUTES:'true'},fetcher:unexpected});
+ assert.equal(missingRedis.reason,'redis-unavailable');
+});
+
+test('public status reports settings and never includes key material',()=>{
+ const info=statusData(env);
+ assert.equal(info.walking.keyConfigured,true);
+ assert.equal(info.walking.dailyLimit,200);
+ assert.equal(info.walking.maxPerSearch,5);
+ assert.equal(info.walking.enabled,false);
+ assert.ok(!JSON.stringify(info).includes(env.TMAP_APP_KEY));
+});
+
+test('route API looks up a stored origin and trusted campus on the server',async()=>{
+ let networkCalls=0;
+ const data=await handleWalking(ids,{
+  req,env:{...env,ENABLE_WALKING_ROUTES:'true'},
+  store:{
+   get:async key=>{assert.equal(key,'knuroom:listing:listing-1');return {id:'listing-1',lat:37.312,lng:127.921,approximate:true};},
+   command:async args=>args[1]===RESERVE_WALK?['owner']:1
+  },
+  fetcher:async(url,init)=>{
+   assert.match(url,/routes\/pedestrian/);
+   const body=JSON.parse(init.body);
+   assert.equal(body.startX,127.921);assert.equal(body.startY,37.312);
+   networkCalls++;
+   return Response.json({features:[{type:'Feature',geometry:{type:'Point'},properties:{pointType:'SP',totalTime:901,totalDistance:950}}]});
+  }
+ });
+ assert.equal(networkCalls,1);assert.equal(data.status,'success');
+ assert.equal(data.durationMinutes,16);assert.equal(data.originApproximate,true);
+});

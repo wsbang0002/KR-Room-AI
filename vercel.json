@@ -2,6 +2,10 @@
   "version": 2,
   "outputDirectory": "public",
   "functions": {
+    "api/routes/*.js": {
+      "maxDuration": 60,
+      "includeFiles": "data/**"
+    },
     "api/*.js": {
       "maxDuration": 60,
       "includeFiles": "data/**"

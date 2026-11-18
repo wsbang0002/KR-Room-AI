@@ -2,3 +2,20 @@
 .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}.controls label{display:flex;flex-direction:column;gap:6px}.controls input,.controls select{font:inherit;padding:10px;border:1px solid #ccd3df;border-radius:8px;max-width:100%}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}details{margin:16px 0}summary{cursor:pointer}iframe{width:100%;height:320px;border:0}.room button{margin:8px 0}.unknown{border-style:dashed}#regionChoices button{margin:5px;padding:8px}#unknownTitle{margin-top:28px}
 
 #integrationResult{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:14px;line-height:1.7}
+
+.place-field { grid-column: 1 / -1; }
+.place-field label { margin: 0 0 6px; }
+.place-input { display: flex; gap: 8px; }
+.place-input input { width: min(100%, 32em); min-width: 0; }
+.place-input button, .place-list button, .room-action { border: 1px solid #cbd6e5; background: #fff; color: #294579; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; }
+.place-input button { flex-shrink: 0; }
+.place-field .hint:empty { display: none; }
+.place-list { list-style: none; margin: 8px 0; padding: 0; }
+.place-list button { text-align: left; margin: 2px 0; }
+.place-list small { display: block; margin-top: 3px; color: #50627c; }
+.walk-summary { font-weight: 700; font-size: 15px; margin: 12px 0 4px; }
+.map-points { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; }
+.map-points figure { min-width: 0; margin: 0; }
+.map-points figcaption { font-weight: 700; color: #354f75; font-size: 14px; padding: 10px 0; }
+.map-points iframe { height: 235px; border-radius: 8px; }
+.room-actions { display: flex; flex-wrap: wrap; gap: 7px; }

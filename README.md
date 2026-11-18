@@ -1,4 +1,4 @@
-# KNU Room AI v0.5
+# KNU Room AI v0.6
 
 기존 v0.4의 원본 매물 10건과 가상 데모를 유지한 전국 자연어 월세 검색 시제품입니다. 세 가지 핵심 기능은 자연어 검색, 월세·관리비·통학시간 비교, 맞춤 추천입니다. 실제 공실·가격·정확한 경로를 보증하지 않습니다.
 
@@ -19,15 +19,17 @@ http://localhost:3000 에서 기본 가상 데모를 사용할 수 있습니다.
 ## 기능과 API
 
 - 전국 지역: 17개 시도, 시군구·읍면동 명칭 검색과 중복 지명 선택. `data/regions.json`은 SGIS / vuski/admdongkor 행정구역 인덱스의 **2026-04-01** 명칭을 추출한 3,830개 항목입니다. 요청 명세의 광주·전남 별도 구성을 지원하기 위해 이 시점을 고정했습니다. 최신 행정개편 및 법정동과 행정동의 차이는 별도 검증 대상입니다. 미등록 명칭을 실존 지역으로 추정하지 않습니다. 출처·라이선스는 `docs/LICENSE-regions.txt` 참조.
-- Gemini: 관리자 인증 + Redis 영속 호출 제한이 있을 때만 호출. 1일 20회, 출력 1024토큰, 8초 timeout, 10분 동일 질의 캐시. JSON 타입·범위·허용 키 검증 후 사용하며 장애/제한/미설정 시 로컬 파서로 대체. `parser=gemini`는 검증된 실제 응답, `gemini-cache`는 그 캐시, `local`은 기본 파서입니다. 호출 횟수 제한은 금액 보증이 아니므로 Google 프로젝트 자체 예산/할당량도 설정하세요.
+- 자연어 검색은 운영에서 OpenRouter의 무료 Ling 3.2 Flash를 사용합니다. 계정 무료 등급, 요청 가격 상한, 관리자 인증과 Redis 일일 제한을 확인하며, 응답 오류 시 기본 파서로 검색합니다. Gemini도 설정을 통해 선택할 수 있습니다.
 - Apify: 고정 Dataset 조회·수동 import 유지. 지역별 신규 Actor는 비동기 시작→상태 조회→Dataset 조회. Actor와 빌드 `1.0.12`는 서버 고정이며 임의 Actor/URL/건수/비용을 받지 않습니다. 공개 스키마는 `docs/apify-input-schema.json`에 저장했습니다.
 - 추천: 필수 지역·예산·방 유형·필수 옵션·이동시간을 먼저 검증. 정보 부족 후보를 `unverified`로 분리. 비용 50%, 이동시간 35%, 옵션 15% 기본값과 비용/시간 슬라이더를 지원합니다. 누락된 항목의 점수를 다른 항목으로 재분배하지 않으며 점수 근거 비율과 수집일을 표시합니다.
 - 지도: 선택 매물 좌표를 OpenStreetMap iframe으로 표시. 대략적 좌표 표시이며 실제 경로 계산과 다릅니다. 최초 지도 선택 시 OSM 외부 요청이 발생합니다.
-- 이동시간: 도보/대중교통/자동차 조건 지원. **실경로 연동은 부분 구현**입니다. `lib/routes.js`의 TMAP 도보/자동차 어댑터와 Mock 테스트만 있으며 검색에서 유료 경로 요청은 실행하지 않습니다. 대중교통 공급사, 실제 목적지 좌표 검증, 가격/할당량 계약·영속 비용 보호를 추가한 뒤 연결해야 합니다. 직선거리로 이동시간을 생성하지 않습니다. 기본 캠퍼스 명칭·좌표도 별도 확인이 필요합니다.
+- 일반 검색의 보행 경로 계산은 기본적으로 꺼져 있습니다. 활성화하면 보행 시간이 필요한 검색에서 지역·가격 등으로 후보를 좁힌 뒤 선택한 목적지까지 최대 5개 경로를 조회합니다. TMAP 응답의 전체 초를 분으로 올림하며 근사 매물 위치에는 해당 사실을 표시합니다. 도보 계산을 사용할 수 없으면 시간 조건은 미확인으로 표시됩니다. 운영 활성화에 필요한 TMAP 상품 확인 및 저장 조건은 [보행 경로 운영 안내](docs/TMAP.md)를 참고하세요.
 
 | Endpoint | 동작 |
 | --- | --- |
-| POST `/api/search` | `{query,demo,edits?,jobId?}` → 지역·조건·추천·미확인 후보 |
+| POST `/api/destinations` | `{query}` → 학교·직장 목적지 ID, 주소, 좌표 출처 |
+| POST `/api/routes/walking` | `{listingId,destinationId,diagnostic?,confirmFreePlan?}` → 검증된 시간·거리 또는 미확인 사유 |
+| POST `/api/search` | `{query,demo,edits?,jobId?,destinationId?}` → 지역·조건·추천·미확인 후보 |
 | POST `/api/collect` | `{query,edits?}` → 202, jobId/runId/state; 인증 필수 |
 | GET `/api/collect-status?jobId=...` | READY/RUNNING/SUCCEEDED/FAILED/ABORTED/TIMED-OUT 등 |
 | GET `/api/listings?jobId=...` | 성공 Dataset 정규화·중복 제거·원래 조건 추천 |

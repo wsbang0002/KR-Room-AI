@@ -1,47 +1,30 @@
-import {buildConfirmedConditions} from '../lib/search-turn.js';
-import {loadListings} from '../lib/apify.js';
+import {buildConfirmedConditions,conditionFields,destinationTurn,mentionedDestination,searchTurn} from '../lib/search-turn.js';
+import {jobInventory,loadRegionInventory,regionalSummary} from '../lib/inventory.js';
 import {buildConditions} from '../lib/conditions.js';
 import {analyzeSearch} from '../lib/gemini.js';
 import {recommend} from '../lib/recommend.js';
-import {DEFAULT_DESTINATION_ID,getDestination,identifyDestination} from '../lib/destinations.js';
+import {getDestination,identifyDestination} from '../lib/destinations.js';
 import {resolveLocation} from '../lib/regions.js';
 import {walkingRoute,walkingSettings,validWalkingPoint} from '../lib/walking.js';
-import {redis} from '../lib/store.js';
-import {storedListings} from '../lib/listing-store.js';
 import {collectionStatus} from '../lib/collection.js';
 import {endpoint,privateData,HttpError} from '../lib/security.js';
-// Prefer explicit user selections and names over AI suggestions. An ambiguous campus
-// must never turn into a route to the implicit default.
-async function searchDestination(body,text,ai,conditions,options){
- if(body.destinationId!=null){
-  if(typeof body.destinationId!=='string'||!body.destinationId.trim()||body.destinationId.length>512){
-   throw new HttpError(400,'목적지 선택 값을 확인해 주세요.');
+async function searchDestination(id,name,options){
+ if(id!=null){
+  if(typeof id!=='string'||!id.trim()||id.length>180)throw new HttpError(400,'목적지 선택 값을 확인해 주세요.');
+  const place=await getDestination(id,options);
+  if(!place?.verified)throw new HttpError(422,'선택한 목적지 주소를 다시 확인해 주세요.');
+  if(name&&name!==place.name&&identifyDestination(name).destination?.id!==id){
+   throw new HttpError(422,'입력한 목적지와 선택한 장소가 다릅니다. 주소를 다시 확인해 주세요.');
   }
-  const place=await getDestination(body.destinationId,options);
-  return {destination:place,status:place?'resolved':'unresolved',explicit:true};
+  return {destination:place,status:'resolved',explicit:true};
  }
- const specified=typeof body.edits?.destination==='string'?body.edits.destination.trim():'';
- const fromText=identifyDestination(specified||text);
- if(specified||fromText.status!=='missing'){
-  return {...fromText,status:fromText.status==='missing'?'unresolved':fromText.status,explicit:true};
- }
- if(ai?.destination?.trim()){
-  const fromAI=identifyDestination(ai.destination);
-  return {...fromAI,status:fromAI.status==='missing'?'unresolved':fromAI.status,explicit:true};
- }
- // A location particle can name a workplace absent from the campus catalog.
- // An administrative search area or a budget such as "40만원까지" is not a workplace.
- const mentions=text.matchAll(/([가-힣A-Za-z0-9·]+?)\s*(까지|에서|근처|주변|인근|로부터|으로부터)/g);
- for(const [,name] of mentions){
-  if(/^(?:집|방|원룸|매물|여기|기본값|원|만원|분)$/.test(name)||/\d(?:[.,\d]*)(?:만|만원|원|분|시간)?$/.test(name))continue;
-  if(resolveLocation(name).status==='resolved')continue;
-  return {destination:null,status:'unresolved',explicit:true};
- }
- if(!conditions.region.isDefault&&conditions.maxCommuteMinutes==null){
-  return {destination:null,status:'not-requested',explicit:false};
- }
- const place=await getDestination(DEFAULT_DESTINATION_ID,options);
- return {destination:place,status:place?'default':'unresolved',explicit:false};
+ if(!name)return {destination:null,status:'not-requested',explicit:false};
+ const identified=identifyDestination(name);
+ return {...identified,status:identified.status==='missing'?'unresolved':identified.status,explicit:true};
+}
+
+function clarification(turn,region){
+ return {status:422,data:{...turn,error:turn.question,...(region?{region}:{})}};
 }
 
 async function rankWithWalking(items,conditions,selection,options,{snapshot},calculateRoute){
@@ -90,47 +73,53 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
   throw new HttpError(400,'확정한 검색 조건을 확인해 주세요.');
  }
  const fromTurn=hasConfirmed?buildConfirmedConditions(confirmed):null;
- const loadAvailable=async location=>{
-  if(location&&env.UPSTASH_REDIS_REST_URL&&env.UPSTASH_REDIS_REST_TOKEN){try{const items=await storedListings(store||redis(env,fetcher),location);if(items.length)return {items,source:'redis',notice:'영속 저장 매물입니다. 마지막 확인일·stale 표시를 확인하세요. 공실 미검증.'};}catch{}}
-  return loadListings({env,fetcher});
+ const options={req,env,fetcher,store};
+ const build=ai=>{
+  try{return fromTurn||buildConditions(text,ai,body.edits,{resolveDestinationLater:true});}
+  catch{throw new HttpError(400,'검색 조건의 값과 범위를 확인해 주세요.');}
  };
- let initialLocation=fromTurn?.location||null;
- if(!hasConfirmed){try{initialLocation=buildConditions(text,null,body.edits).location;}catch{}}
- const earlyLoad=!body.jobId&&initialLocation?loadAvailable(initialLocation).catch(()=>null):null;
+ let conditions=build(null);
+ const name=hasConfirmed?confirmed.destination:body.edits?.destination||mentionedDestination(text);
+ const selection=await searchDestination(body.destinationId,name,options);
+ const place=selection.destination;
+ // Resolve required inputs before AI reservations, inventory reads or route work.
+ if(!hasConfirmed&&!body.edits?.location&&!place){
+  const local=searchTurn({query:text});
+  if(local.state==='clarify'&&local.kind==='region')return clarification(local,conditions.region);
+ }
+ const needsDestination=()=>conditions.maxCommuteMinutes!=null&&!place?.verified;
+ if(needsDestination())return clarification(destinationTurn(text,conditionFields(conditions),{name:name||null}));
+ // An ordinary location/price query can overlap its inventory read with AI.
+ // Timing or destination language must finish clarification first.
+ const initialLocation=conditions.location;
+ const mayPrefetch=!hasConfirmed&&!body.jobId&&!selection.explicit&&conditions.maxCommuteMinutes==null&&
+  conditions.region.status==='resolved'&&!/(?:도보|걸어|통근|통학|출퇴근|직장|학교|캠퍼스|대중교통|자동차|시간|목적지|도착|까지|분)/.test(text);
+ const pendingInventory=mayPrefetch?loadRegionInventory(initialLocation,options).catch(()=>null):null;
  const parsed=hasConfirmed
   ? {ai:null,parser:'confirmed',parserReason:'confirmed-search-conditions'}
-  : await analyzeSearch(text,{req,env,fetcher,store});
- let conditions;
- try{
-  conditions=fromTurn||buildConditions(text,parsed.ai,body.edits,{resolveDestinationLater:true});
- }catch{throw new HttpError(400,'검색 조건의 값과 범위를 확인해 주세요.');}
- const options={req,env,fetcher,store};
- const destinationInput=hasConfirmed?{destinationId:body.destinationId,edits:{destination:confirmed.destination,location:confirmed.location}}:body;
- const selection=await searchDestination(destinationInput,hasConfirmed?'':text,parsed.ai,conditions,options);
- const place=selection.destination;
+  : await analyzeSearch(text,options);
+ if(parsed.ai)conditions=build(parsed.ai);
+ if(needsDestination())return clarification(destinationTurn(text,conditionFields(conditions),{name:name||null}));
+ conditions.destination=place?.name||name||null;
  conditions.destinationPlace=place;
  conditions.destinationStatus=selection.status;
  conditions.destinationVerified=Boolean(place?.verified);
- if(place){
-  conditions.destination=place.name;
-  if(selection.explicit&&(conditions.region.isDefault||conditions.region.status==='unsupported')&&place.region&&!destinationInput.edits?.location&&!parsed.ai?.location){
-   const region=resolveLocation(place.region);
-   if(region.status==='resolved'){conditions.region=region;conditions.location=region.location;}
-  }
- }else{
-  conditions.destination=destinationInput.edits?.destination||parsed.ai?.destination||null;
-  if(selection.status!=='not-requested')conditions.warnings.push(selection.status==='ambiguous'?'목적지 이름이 여러 곳과 일치합니다. 주소로 선택해 주세요.':'목적지 좌표를 확인할 수 없습니다. 목적지를 검색해 선택해 주세요.');
+ if(place&&(conditions.region.isDefault||conditions.region.status==='unsupported')&&place.region&&!hasConfirmed&&!body.edits?.location&&!parsed.ai?.location){
+  const region=resolveLocation(place.region);
+  if(region.status==='resolved'){conditions.region=region;conditions.location=region.location;}
  }
- if(conditions.region.status!=='resolved')return {status:422,data:{error:conditions.region.status==='ambiguous'?'동명이인 지역입니다. 시도·시군구를 선택해 주세요.':'지역을 확인할 수 없습니다. 행정구역 전체 이름을 입력해 주세요.',region:conditions.region}};
+ if(!place&&selection.explicit)conditions.warnings.push('목적지 좌표를 확인할 수 없습니다. 주소를 선택해 주세요.');
+ if(conditions.region.status!=='resolved')return {status:422,data:{error:'검색할 시·군·구와 동 이름을 확인해 주세요.',region:conditions.region}};
  let loaded;
- if(body.jobId){const job=await collectionStatus(body.jobId,{req,env,fetcher,store,includeItems:true});if(job.state!=='SUCCEEDED')throw new HttpError(409,`수집 상태: ${job.state}`);loaded={items:job.items,source:'apify-run',notice:'신규 Dataset. 공실·권리·정확한 경로는 미검증입니다.'};}
+ if(body.jobId){const job=await collectionStatus(body.jobId,{req,env,fetcher,store,includeItems:true});if(job.state!=='SUCCEEDED')throw new HttpError(409,`수집 상태: ${job.state}`);loaded=jobInventory(job.items);}
  else {
-  loaded=earlyLoad&&initialLocation===conditions.location?await earlyLoad:null;
-  if(!loaded)loaded=await loadAvailable(conditions.location);
+  if(pendingInventory&&initialLocation===conditions.location)loaded=await pendingInventory;
+  if(!loaded)loaded=await loadRegionInventory(conditions.location,options);
  }
+ const coverage=regionalSummary(loaded,conditions.location);
  const ranked=await rankWithWalking(loaded.items,conditions,selection,options,
-  {snapshot:loaded.source.startsWith('snapshot')},calculateRoute);
+  {snapshot:false},calculateRoute);
  const pendingRoute=conditions.maxCommuteMinutes!=null&&ranked.unverified.some(item=>item.commuteMinutes==null);
- return {status:200,data:{mode:'real',...parsed,ai:undefined,dataSource:loaded.source,conditions,count:loaded.items.length,nearCampusVerifiedCount:loaded.items.filter(x=>x.nearCampusVerified).length,...ranked,collectionNeeded:!ranked.results.length&&!pendingRoute,notice:loaded.notice}};
+ return {status:200,data:{mode:'real',...parsed,ai:undefined,dataSource:loaded.source,coverage,conditions,count:loaded.items.length,nearCampusVerifiedCount:loaded.items.filter(x=>x.nearCampusVerified).length,...ranked,collectionNeeded:!ranked.results.length&&!pendingRoute&&['available','empty'].includes(coverage.state),notice:loaded.notice}};
 }
 export default endpoint('POST',req=>handleSearch(req.body,{req}));

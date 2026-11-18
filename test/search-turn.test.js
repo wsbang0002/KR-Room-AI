@@ -5,7 +5,7 @@ import {searchTurn,validateTurnConditions} from '../lib/search-turn.js';
 import {locationMatch} from '../lib/regions.js';
 
 const wonju='강원특별자치도 원주시';
-const initial=()=>searchTurn({query:'원주시 무실동 원룸, 관리비 포함 월 50만 원 이하, 보증금 500만원, 대중교통 20분, 에어컨 필수'}).conditions;
+const initial=()=>searchTurn({query:'원주시 무실동 원룸, 관리비 포함 월 50만 원 이하, 보증금 500만원, 강원대 원주캠퍼스까지 대중교통 20분, 에어컨 필수'}).conditions;
 
 test('a bare ambiguous neighborhood asks before changing results, then accepts a typed city and retains every other filter',()=>{
  const previous=initial();

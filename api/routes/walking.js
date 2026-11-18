@@ -1,3 +1,4 @@
+import {publicWalking,publicWalkingPlaces} from '../../lib/public-walking.js';
 import {loadListings} from '../../lib/apify.js';
 import {getDestination} from '../../lib/destinations.js';
 import {listingKey} from '../../lib/listing-store.js';
@@ -11,6 +12,7 @@ function unavailable(reason){
 }
 
 export async function handleWalking(body,{req,env=process.env,store,fetcher=fetch}={}){
+ if(body&&Object.hasOwn(body,'publicOriginId'))return publicWalking(body,{req,env,store,fetcher});
  privateData(req,env);
  if(body?.diagnostic===true)admin(req,env);
  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!fields.has(key))||
@@ -44,4 +46,9 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
 }
 
 // A route's string status is application data. Only the endpoint wrapper sets HTTP status.
-export default endpoint('POST',async req=>({data:await handleWalking(req.body,{req})}));
+const calculate=endpoint('POST',async req=>({data:await handleWalking(req.body,{req})}));
+const places=endpoint('GET',req=>{
+ if(req.query?.places!=='public')throw new HttpError(400,'공개 장소 목록을 선택해 주세요.');
+ return publicWalkingPlaces();
+});
+export default function walking(req,res){return (req.method==='GET'?places:calculate)(req,res);}

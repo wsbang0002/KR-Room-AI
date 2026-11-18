@@ -23,4 +23,9 @@ TMAP Open API 약관은 저장 후 24시간이 지난 데이터의 사용을 금
 1. **무료 상품 확인.** SK 대시보드의 앱과 적용 상품에서 `KNU-Room-AI`, 활성 `TMAP(Free)`, 보행자 경로 사용 권한, 당일 경로안내 사용량과 차단 조건을 확인한다. 확인 내용을 기록할 때 앱 키는 제외한다. 공개 문서에서 계정별 잔여량 조회용 공개 API는 확인되지 않았다. [SK 대시보드](https://openapi.sk.com/mypage/dashboard) · [무료 정책](https://openapi.sk.com/products/calc?menuSeq=5&svcSeq=4)
 2. **일반 검색을 끈 상태에서 준비.** Vercel Production에서 기존 `TMAP_APP_KEY`를 유지하고 `ENABLE_WALKING_ROUTES=false`, `TMAP_DAILY_APP_LIMIT=200`, `TMAP_MAX_ROUTES_PER_SEARCH=5`를 사용한다. 관리자 상태 화면에서 설정 여부, Redis 연결 및 앱 사용량을 확인한다. 약관과 해당 상품의 저장 조건을 확인한 경우에만 `TMAP_ROUTE_CACHE_ALLOWED=true`를 설정한다.
 3. **관리자 경로 1건 확인.** 일반 검색용 `ENABLE_WALKING_ROUTES=false`를 유지한다. `ENABLE_TMAP_DIAGNOSTICS`가 미설정이면 환경변수 변경이나 재배포 없이 검사할 수 있다. 인증된 관리자가 매물과 목적지를 선택하고 무료 상품·잔여량·차단 조건을 확인한 뒤 화면에서 1건 검사를 승인한다. 이때 `POST /api/routes/walking`은 `listingId`, `destinationId`, `diagnostic: true`, `confirmFreePlan: true`를 받는다. 승인은 해당 요청에만 적용되며 일반 검색을 활성화하지 않는다. 진단 플래그를 명시적으로 `false`로 설정하면 이 일회성 승인도 차단한다. 성공 응답의 거리·시간·조회 시각을 확인하고, `cacheHit: false`와 당일 사용량 변화로 실제 신규 조회를 판별한다.
-4. **검색 활성화.** 실제 검증 성공 후 승인된 환경에서 `ENABLE_WALKING_ROUTES=true`로 재배포한다. 도보 조건 검색 결과의 제공자와 매물 좌표 정확도를 확인한다. 차단·중지 시 일반 검색 및 관리자 실호출 플래그를 모두 `false`로 되돌리고 재배포한다.
+4. **승인된 운영 배포.** `vercel.json`의 `WALKING_ROUTES_PRODUCTION_HOST`는 `kr-room-ai.vercel.app`으로 지정한다. Vercel이 주입한 프로젝트 운영 도메인과 일치하는 Production 배포에만 이 설정을 적용한다. 환경변수 `ENABLE_WALKING_ROUTES`를 직접 설정하면 이 값이 우선한다. 미리보기와 로컬 배포에서는 기본적으로 꺼져 있다.
+5. **서비스 종료 또는 일시 중지.** 해당 프로젝트의 Production에서 `ENABLE_WALKING_ROUTES=false`, `ENABLE_TMAP_DIAGNOSTICS=false`를 설정하고 재배포한 뒤 `/api/status`의 `walking.enabled`를 확인한다. 매물 공개 및 Apify 유료 수집은 도보 설정과 독립적으로 관리한다.
+
+## 비로그인 도보 경로
+
+`GET /api/routes/walking?places=public`은 원주역 · 남춘천역 · 관악산역 · 신촌역(2호선) · 부산대역과 인근 대학을 반환한다. 역 좌표는 해당 지점의 한국어 위키백과 문서에서 확인한 대표 좌표며 각 항목에 출처 URL이 포함된다. 일반 방문자가 출발역과 캠퍼스를 선택하고 조회하면 서버는 두 ID를 검증한 뒤 TMAP에 좌표를 보낸다. 매물 ID·임의 좌표·다른 도시 조합은 이 경로에서 사용할 수 없다. 매물 추천과 같은 Redis 일일 카운터, 사용자별 제한, 동시 실행 제한을 적용한다.

@@ -10,6 +10,7 @@
   <script src="/theme.js"></script>
   <link rel="preload" as="image" href="/images/neighborhood.webp">
   <link rel="stylesheet" href="/style.css">
+  <script src="/search-info.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -42,10 +43,15 @@
     </section>
 
     <div class="shell work-area">
-      <section id="search" class="composer" aria-labelledby="queryLabel">
+      <section id="search" class="composer" tabindex="-1" aria-labelledby="queryLabel">
         <div class="composer-head">
           <h2><label for="query" id="queryLabel">어떤 방을 찾으세요?</label></h2>
           <button class="reset" id="resetSearch" type="button" hidden>조건 초기화</button>
+        </div>
+        <div id="serviceScope" class="service-scope" role="status" aria-live="polite">
+          <span id="publicationState">매물 공개 상태 확인 중</span>
+          <span id="walkingState">도보 경로 상태 확인 중</span>
+          <span id="coverageSummary" hidden></span>
         </div>
         <form id="searchForm">
           <div class="query-box">
@@ -63,10 +69,26 @@
         </div>
         <div id="conditions" class="condition-list" aria-label="적용한 검색 조건"></div>
         <p id="conversation" class="conversation" role="status" aria-live="polite"></p>
+        <p id="interpretationNote" class="interpretation-note"></p>
         <div id="regionChoices" class="choice-list"></div>
       </section>
 
-      <section id="results" class="results" data-state="ready" aria-labelledby="resultsTitle">
+      <section id="publicRoute" class="public-route" aria-labelledby="publicRouteTitle" hidden>
+        <div class="route-intro">
+          <h2 id="publicRouteTitle">공개 장소 간 도보 경로</h2>
+          <p>출발역과 캠퍼스를 선택하면 두 대표 지점 사이의 도보 거리와 예상 시간을 TMAP에서 조회해요.</p>
+        </div>
+        <form id="publicRouteForm" class="public-route-form">
+          <div class="route-fields">
+            <label for="routeOrigin">출발지<select id="routeOrigin" name="origin" required></select></label>
+            <label for="routeDestination">도착지<select id="routeDestination" name="destination" required></select></label>
+          </div>
+          <button class="route-submit" id="routeSubmit" type="submit">도보 경로 확인</button>
+        </form>
+        <div id="routeFeedback" class="route-result" role="status" aria-live="polite"></div>
+      </section>
+
+      <section id="results" tabindex="-1" class="results" data-state="ready" aria-labelledby="resultsTitle">
         <div class="section-heading">
           <h2 id="resultsTitle">검색 결과</h2>
         </div>
@@ -79,7 +101,7 @@
         <div id="unknownCards" class="listings"></div>
       </section>
 
-      <section id="guide" class="guide" aria-labelledby="guideTitle">
+      <section id="guide" tabindex="-1" class="guide" aria-labelledby="guideTitle">
         <h2 id="guideTitle">이용 안내</h2>
         <div class="guide-items">
           <details>
@@ -98,6 +120,10 @@
     <div class="shell footer-inner">
       <a class="footer-brand" href="/">KNU Room AI</a>
       <div>
+        <nav class="policy-nav" aria-label="서비스 정책">
+          <a href="/privacy.html">개인정보 처리 안내</a>
+          <a href="/terms.html">서비스 이용약관</a>
+        </nav>
         <p>매물의 가격과 공실 여부는 계약 전 확인해 주세요.</p>
         <p>북촌 사진 <a href="https://commons.wikimedia.org/wiki/File:Bukchon-ro_11-gil_street_with_hanok_houses_at_sunrise_in_Bukchon_Hanok_Village_Seoul.jpg" rel="external">Basile Morin</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license">CC BY-SA 4.0</a> · WebP 축소</p>
         <p>행정구역 자료 · 통계청 SGIS(공공누리 제1유형), vuski/admdongkor(CC BY 4.0), 2026.04.01 명칭 추출·재구성</p>

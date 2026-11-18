@@ -60,16 +60,14 @@ test('search re-ranks walking estimates with the actual user weights',async()=>{
  assert.equal(walk.data.results[0].id,'near');
 });
 
-test('skip walking when time is unrequested, transit requested, routes disabled or destination is unverified',async()=>{
+test('skip walking when time is unrequested, transit requested, or routes disabled',async()=>{
  const rooms=[room('r')];
  let calls=0;
  const unavailable=()=>{calls++;throw Error('unexpected');};
  const cases=[
   [{query:'원주시 월세 40만원'},env,'not-requested'],
   [{query:'원주시 대중교통 15분',destinationId:DEFAULT_DESTINATION_ID},env,'not-requested'],
-  [{query,destinationId:DEFAULT_DESTINATION_ID},{...env,ENABLE_WALKING_ROUTES:'false'},'disabled'],
-  [{query,destinationId:'unknown-place'},env,'destination-unverified'],
-  [{query:'원주시 강원대에서 도보 15분'},env,'destination-ambiguous']
+  [{query,destinationId:DEFAULT_DESTINATION_ID},{...env,ENABLE_WALKING_ROUTES:'false'},'disabled']
  ];
  for(const [body,settings,status] of cases){
   const result=await search(rooms,body,unavailable,settings);
@@ -79,24 +77,29 @@ test('skip walking when time is unrequested, transit requested, routes disabled 
  assert.equal(calls,0);
 });
 
-test('unknown workplace waits for destination selection and never suggests paid collection for an unverified route',async()=>{
- let calls=0;
- const result=await search([room('candidate')],{query:'원주시 삼성전자까지 도보 15분'},()=>{
-  calls++;
-  throw Error('Should not route to the implicit campus');
- });
- assert.equal(result.data.conditions.destinationPlace,null);
- assert.equal(result.data.walking.status,'destination-unverified');
- assert.equal(result.data.unverified.length,1);
- assert.equal(result.data.collectionNeeded,false);
- assert.equal(calls,0);
+test('an unknown workplace or ambiguous campus asks for an address before looking at any inventory',async()=>{
+ for(const [query,expected] of [['원주시 삼성전자까지 도보 15분','삼성전자'],['원주시 강원대에서 도보 15분','강원대학교']]){
+  const result=await search([room('candidate')],{query},()=>assert.fail('unexpected route lookup'));
+  assert.equal(result.status,422);assert.equal(result.data.kind,'destination');assert.equal(result.data.lookupQuery,expected);
+  assert.equal(result.data.results,undefined);assert.equal(result.data.unverified,undefined);
+  assert.equal(result.data.collectionNeeded,undefined);
+ }
+ await assert.rejects(search([],{query,destinationId:'unknown-place'},()=>assert.fail('unexpected route lookup')),{status:422});
 });
 
-test('ordinary city and budget phrases still allow the default campus',async()=>{
- const result=await search([room('candidate')],{query:'원주시에서 월세 40만원까지 도보 15분'},(r,destination)=>{
-  assert.equal(destination.id,DEFAULT_DESTINATION_ID);
-  return tmap(r,12);
- });
- assert.equal(result.data.walking.successCount,1);
- assert.equal(result.data.conditions.destinationStatus,'default');
+test('a travel-time cap in Wonju or Seoul asks where to travel; no model, inventory, job or routing work starts',async()=>{
+ let calls=0;
+ const unexpected=async()=>{calls++;throw Error('unexpected external access');};
+ const options={req,env:{...env,GEMINI_API_KEY:'fake'},store:{get:unexpected,command:unexpected,reserve:unexpected},fetcher:unexpected,calculateRoute:unexpected};
+ for(const body of [
+  {query:'원주시에서 월세 40만원까지 도보 15분'},
+  {query:'서울 관악구에서 도보 15분 이내의 원룸'},
+  {query:'서울 관악구 학교까지 도보 15분',jobId:'future-job'},
+  {query:'원주시요',confirmedConditions:{location:region,maxCommuteMinutes:15}}
+ ]){
+  const result=await handleSearch(body,options);
+  assert.equal(result.status,422);assert.equal(result.data.kind,'destination');assert.equal(result.data.conditions.destination,null);
+  assert.equal(result.data.conditions.maxCommuteMinutes,15);assert.equal(result.data.results,undefined);
+ }
+ assert.equal(calls,0);
 });

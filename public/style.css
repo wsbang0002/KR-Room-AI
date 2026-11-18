@@ -216,3 +216,84 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
   html { scroll-behavior: auto; }
   .arrow { transition: none; }
 }
+
+/* The live scope sits beside the input so that preparation and an empty search are distinct. */
+.service-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 17px;
+  margin: -3px 0 15px;
+  color: var(--muted);
+  font-size: .81rem;
+  line-height: 1.6;
+}
+#publicationState { color: var(--ink); font-weight: 650; }
+#walkingState, #coverageSummary { position: relative; }
+#coverageSummary:not([hidden]) { flex-basis: 100%; }
+.interpretation-note:not(:empty) { margin-top: 10px; color: var(--muted); font-size: .84rem; }
+.public-route {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 1.8fr);
+  align-items: end;
+  gap: 9px clamp(18px, 3vw, 40px);
+  margin-top: 20px;
+  padding: 22px clamp(18px, 2.6vw, 34px);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--wash);
+}
+.route-intro h2 { font-size: 1.12rem; line-height: 1.5; letter-spacing: -.045em; }
+.route-intro p, .route-result { margin-top: 5px; color: var(--muted); font-size: .84rem; line-height: 1.75; word-break: keep-all; }
+.public-route-form, .route-fields { display: flex; align-items: end; gap: 10px; min-width: 0; }
+.route-fields { flex: 1; }
+.route-fields label { flex: 1; min-width: 0; color: var(--ink); font-size: .83rem; font-weight: 620; }
+.route-fields select {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  border: 1px solid var(--field-edge);
+  border-radius: 6px;
+  color: var(--ink);
+  background-color: var(--surface);
+  padding: 5px 6px;
+  font: inherit;
+}
+.route-submit { min-height: 44px; padding: 6px 14px; border: 1px solid var(--action); border-radius: 6px; background: var(--action); color: var(--action-text); font-size: .86rem; font-weight: 650; }
+.route-result { grid-column: 1 / -1; }
+.route-result:empty { display: none; }
+.route-result strong { color: var(--ink); }
+.policy-nav { display: flex; justify-content: flex-end; gap: 16px; margin-bottom: 6px; color: var(--ink); }
+.policy-nav a { display: inline-flex; align-items: center; min-height: 28px; font-size: .8rem; font-weight: 630; text-underline-offset: 3px; }
+.policy-sheet { padding-block: clamp(36px, 6vw, 86px); }
+.policy-sheet article { max-width: 49rem; }
+.policy-sheet h1 { color: var(--ink); font: 500 clamp(2rem, 4.2vw, 3.3rem)/1.35 var(--serif); letter-spacing: -.06em; }
+.policy-intro { margin-top: 16px; font-size: 1.05rem; color: var(--muted); }
+.policy-sheet section { padding-top: 26px; margin-top: 26px; border-top: 1px solid var(--line); }
+.policy-sheet h2 { margin-bottom: 10px; font-size: 1.18rem; line-height: 1.6; letter-spacing: -.035em; }
+.policy-sheet p, .policy-sheet li { overflow-wrap: anywhere; line-height: 1.88; }
+.policy-sheet p + p { margin-top: 9px; }
+.policy-sheet ul { padding-inline-start: 20px; margin: 0; }
+.policy-sheet li + li { margin-top: 9px; }
+.policy-sheet a { color: var(--link); text-underline-offset: 3px; }
+.policy-sheet .policy-related { display: flex; gap: 18px; margin-top: 25px; }
+.policy-related a { display: inline-flex; min-height: 44px; align-items: center; }
+.policy-page .main-nav a:first-child { border-color: transparent; }
+@media (max-width: 760px) {
+  .public-route { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 12px; }
+}
+@media (max-width: 560px) {
+  .masthead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding-top: 9px; }
+  .masthead .brand { width: fit-content; min-height: 44px; }
+  .masthead .theme-toggle { grid-column: 2; grid-row: 1; min-height: 44px; }
+  .main-nav { grid-column: 1 / -1; grid-row: 2; display: flex; margin: 0; gap: clamp(19px, 7vw, 35px); }
+  .main-nav a { min-height: 44px; padding-inline: 2px; font-size: .84rem; }
+  .service-scope { margin-bottom: 11px; gap: 2px 12px; font-size: .77rem; }
+  .public-route { padding: 16px 14px; }
+  .public-route-form { flex-wrap: wrap; }
+  .route-fields { flex-basis: 100%; align-items: stretch; }
+  .route-submit { margin-left: auto; }
+  .policy-nav { justify-content: flex-start; gap: 18px; }
+  .policy-nav a { min-height: 44px; }
+}

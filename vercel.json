@@ -37,5 +37,8 @@
       "source": "/admin",
       "destination": "/admin/index.html"
     }
-  ]
+  ],
+  "env": {
+    "WALKING_ROUTES_PRODUCTION_HOST": "kr-room-ai.vercel.app"
+  }
 }

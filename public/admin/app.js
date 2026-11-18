@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const query=$('query'),btn=$('submit'),status=$('status'),cards=$('cards'),chips=$('conditions');
 const fmt=n=>n==null?'미확인':`${Number(n).toLocaleString('ko-KR')}만 원`;
 let credential='',controller=null,liveCollection=false;
-let confirmed=null,pending=null,lastPayload=null;
+let confirmed=null,pending=null,lastPayload=null,walkingEnabled=null,coverageRequest=null;
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;}
 function chip(text){chips.append(make('span','chip',text));}
 async function request(path,options={},key=credential){
@@ -18,10 +18,12 @@ function post(path,body){return request(path,{method:'POST',body:JSON.stringify(
 function clearSession(){
  controller?.abort();
  placeLookup?.abort();
+ coverageRequest?.abort();
+ walkingEnabled=null;
  credential='';liveCollection=false;confirmed=null;pending=null;lastPayload=null;
  $('adminKey').value='';query.value='';destinationInput.value='';
  clearPlaces();
- for(const id of ['status','cards','unknownCards','conditions','integrationResult','regionChoices','loginMessage'])$(id).replaceChildren();
+ for(const id of ['status','cards','unknownCards','conditions','integrationResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
  for(const id of ['map','endMap'])$(id).removeAttribute('src');
  for(const id of ['workspace','signOut','unknownTitle','mapPanel'])$(id).hidden=true;
  $('loginPanel').hidden=false;
@@ -45,6 +47,16 @@ $('loginForm').onsubmit=async e=>{
   if(config.adminAuthenticated!==true)throw Error('관리자 인증을 확인할 수 없습니다.');
   credential=key;input.value='';liveCollection=config.liveCollectionEnabled===true;
   $('loginMessage').textContent='';$('loginPanel').hidden=true;$('workspace').hidden=false;$('signOut').hidden=false;
+  walkingEnabled=config.walking?.enabled===true&&config.walking?.keyConfigured===true;
+  $('inventorySummary').textContent='보유 지역을 확인하고 있습니다…';
+  coverageRequest?.abort();
+  coverageRequest=new AbortController();
+  const scope=coverageRequest;
+  request('/api/status?scope=coverage',{signal:scope.signal}).then(data=>{
+   if(!scope.signal.aborted&&credential===key)$('inventorySummary').textContent=searchInfo.inventorySummary(data);
+  }).catch(()=>{
+   if(!scope.signal.aborted&&credential===key)$('inventorySummary').textContent='보유 지역과 매물 수를 확인할 수 없습니다.';
+  });
   busy(false);query.focus();
  }catch(error){
   if(!login.signal.aborted){$('loginMessage').textContent=error.message;input.select();}
@@ -94,7 +106,8 @@ async function findPlaces(){
     choices.hidden=true;
     message.textContent=['선택한 목적지',place.name,place.address,response.attribution].filter(Boolean).join(' · ');
     showPlaceSource(message,place);
-    destinationInput.focus();
+    if(pending?.kind==='destination')loadSelectedPlace(place);
+    else destinationInput.focus();
    };
    li.append(button);choices.append(li);
   }
@@ -104,6 +117,20 @@ async function findPlaces(){
 destinationInput.addEventListener('input',clearPlaces);
 destinationInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();findPlaces();}});
 $('findDestinations').onclick=findPlaces;
+
+async function loadSelectedPlace(place){
+ const next={...pending.conditions,destination:place.name};
+ const body={query:pending.query,confirmedConditions:next,destinationId:place.id};
+ controller?.abort();const operation=new AbortController();controller=operation;
+ busy(true);
+ try{
+  const result=await post('/api/search',body);
+  if(operation.signal.aborted)return;
+  pending=null;confirmed=next;lastPayload=body;
+  render(result);query.value='';
+ }catch(error){if(!operation.signal.aborted)status.textContent=error.message;}
+ finally{if(controller===operation)busy(false);}
+}
 
 function validMapPoint(place){
  return Number.isFinite(place?.lat)&&place.lat>=32&&place.lat<=39&&Number.isFinite(place?.lng)&&place.lng>=124&&place.lng<=132;
@@ -153,7 +180,7 @@ function checkedAt(value){
  return value&&Number.isFinite(date.getTime())?date.toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+' (한국시간)':'미확인';
 }
 
-function walkDetails(el,room,destination){
+function walkDetails(el,room,destination,mode){
  const route=room.walkingRoute;
  const summary=routeSummary(route);
  if(summary){
@@ -161,7 +188,8 @@ function walkDetails(el,room,destination){
   el.append(make('p','metadata',['TMAP 보행 경로',destination?.name,'계산 '+checkedAt(route.calculatedAt)].filter(Boolean).join(' · ')));
   return;
  }
- const time=room.commuteMinutes==null?'이동시간 미확인':`이동시간 ${room.commuteMinutes}분`;
+ const modeLabel={transit:'대중교통',car:'자동차'}[mode];
+ const time=modeLabel?modeLabel+' 시간 계산 미지원':room.commuteMinutes==null?'도보 시간 미확인':`도보 예상 ${room.commuteMinutes}분`;
  const reason=route?.reason?routeReason(route.reason):'';
  el.append(make('p','metadata',[time,reason,room.approximate?'대략적 매물 위치':'위치 정확도 확인 필요'].filter(Boolean).join(' · ')));
 }
@@ -208,17 +236,10 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
  $('mapPanel').hidden=true;$('map').removeAttribute('src');$('endMap').removeAttribute('src');
  chip(c.location);if(c.destination)chip('목적지 · '+(c.destinationPlace?.name||c.destination));
  for(const [key,label] of [['maxDeposit','보증금'],['maxMonthlyTotal','월 총비용'],['maxRent','월세']])if(c[key]!=null)chip(`${label} ≤ ${fmt(c[key])}`);
- if(c.maxCommuteMinutes!=null)chip(`${c.transportMode} ≤ ${c.maxCommuteMinutes}분`);
+ if(c.maxCommuteMinutes!=null)chip(`${{walk:'도보',transit:'대중교통',car:'자동차'}[c.transportMode]} ${c.maxCommuteMinutes}분 이내`);
  c.preferredOptions.forEach(x=>chip(`선호: ${x}`));c.requiredOptions.forEach(x=>chip(`필수: ${x}`));chip(`비용 비중 ${Math.round(c.weights.cost*100)}%`);
- const parserLabel={
-  confirmed:'확정한 검색 조건',
-  local:data.parserReason==='upstream-timeout'?'AI 응답 지연 · 기본 파서로 해석한 조건':'기본 파서로 해석한 조건',
-  gemini:'Gemini로 해석한 조건',
-  'gemini-cache':'이전에 Gemini로 해석한 조건',
-  openrouter:'OpenRouter 무료 모델로 해석한 조건',
-  'openrouter-cache':'이전에 OpenRouter 무료 모델로 해석한 조건'
- }[data.parser]||'검색 조건';
- status.textContent=`${data.dataSource} · 조건 충족 ${data.results.length}건 / 확인 필요 ${data.unverified.length}건 · ${parserLabel} · ${data.notice} ${(c.warnings||[]).join(' ')}`;
+ const summary=searchInfo.resultStatus(data);
+ status.textContent=[summary.text,searchInfo.mobility(c,walkingEnabled)].filter(Boolean).join(' ');
  const walking=data.walking;
  if(walking&&walking.status!=='not-requested'){
   const notes={
@@ -241,12 +262,12 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
    $('regionChoices').append(choose);
   }
  }
- if(!data.results.length)cards.append(make('div','status','조건이 확인된 매물이 없습니다. 지역·예산을 수정하거나 확인 필요 후보를 살펴보세요.'));
+
  function card(r,i,unknown){const el=make('article',unknown?'room unknown':'room');const top=make('div','room-top');top.append(make('h3','',r.title));top.append(make('span','pill',unknown?'확인 필요':`추천 ${i+1}순위`));el.append(top);
  el.append(make('div','price',r.total==null?'월 총액 미확인':`월 ${fmt(r.total)}`));el.append(make('p','metadata',`보증금 ${fmt(r.deposit)} · 월세 ${fmt(r.rent)} · 관리비 ${fmt(r.fee)}`));
- walkDetails(el,r,c.destinationPlace);
+ walkDetails(el,r,c.destinationPlace,c.transportMode);
  el.append(make('p','metadata',`${r.address||'주소 미확인'} · ${r.roomType||'방 유형 미확인'} · ${r.areaM2==null?'면적 미확인':r.areaM2+'㎡'}`));
- el.append(make('p','metadata',`수집일 ${r.collectedAt||'미확인'} · 마지막 확인 ${r.lastSeenAt||'미확인'}${r.syncStatus==='stale'?' (오래된 정보)':''} · 점수 근거 정보 ${Math.round(r.scoreCoverage*100)}%`));
+ el.append(make('p','metadata',searchInfo.listingRecord(r)));
  el.append(make('p','metadata',r.reasons.join(' · ')));if(unknown)el.append(make('p','caution',`필수 정보 미확인: ${r.missingConditions.join(', ')}`));
  const opts=make('div','room-tags');(r.options||[]).forEach(o=>opts.append(make('span','',o)));if(!r.options?.length)opts.append(make('span','','옵션 정보 미확인'));el.append(opts);
  addRoomActions(el,r,c.destinationPlace);
@@ -262,16 +283,24 @@ function busy(active){
 }
 async function submit(text=query.value.trim()){
  if(!credential||!text)return;
- controller?.abort();const operation=new AbortController();controller=operation;
+ controller?.abort();placeLookup?.abort();const operation=new AbortController();controller=operation;
  busy(true);status.textContent='검색 조건을 확인하고 있습니다…';
  try{
-  const turn=await post('/api/conditions',{query:text,previous:confirmed||undefined,pending:pending||undefined});
+  const turn=await post('/api/conditions',{query:text,previous:confirmed||undefined,pending:pending||undefined,destinationId:selectedDestination?.id});
   if(operation.signal.aborted)return;
+  $('interpretationNote').textContent=[searchInfo.interpretation(turn.interpretation),searchInfo.mobility(turn.conditions||turn.pending?.conditions,walkingEnabled)].filter(Boolean).join(' ');
   if(turn.state==='clarify'){
    pending=turn.pending;status.textContent=turn.question;
    const choices=$('regionChoices');choices.replaceChildren();
    for(const address of turn.candidates||[]){
-    const button=make('button','',address);button.type='button';button.onclick=()=>submit(address);choices.append(button);
+    const campus=turn.kind==='destination'?turn.places?.find(p=>p.name===address):null;
+    const button=make('button','',[address,campus?.address].filter(Boolean).join(' · '));button.type='button';button.onclick=()=>submit(address);choices.append(button);
+   }
+   query.placeholder=turn.kind==='destination'?'예: 강원대학교 원주캠퍼스':'예: 원주시요';
+   if(turn.kind==='destination'&&turn.lookupQuery&&!turn.candidates?.length){
+    destinationInput.closest('details').open=true;
+    destinationInput.value=turn.lookupQuery;
+    findPlaces();
    }
    query.value='';query.focus();return;
   }
@@ -281,7 +310,7 @@ async function submit(text=query.value.trim()){
   const place=changedDestination&&requested!==selectedDestination?.name?null:selectedDestination;
   const nextConditions=place?{...turn.conditions,destination:place.name}:turn.conditions;
   const body={query:original,confirmedConditions:nextConditions};
-  if(place)body.destinationId=place.id;
+  if(place||turn.destinationId)body.destinationId=place?.id||turn.destinationId;
   const result=await post('/api/search',body);
   if(operation.signal.aborted)return;
   if(selectedDestination&&!place){clearPlaces();destinationInput.value='';}

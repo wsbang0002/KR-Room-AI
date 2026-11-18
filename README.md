@@ -25,17 +25,21 @@ http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 �
 - Apify: 고정 Dataset 조회·수동 import 유지. 지역별 신규 Actor는 비동기 시작→상태 조회→Dataset 조회. Actor와 빌드 `1.0.12`는 서버 고정이며 임의 Actor/URL/건수/비용을 받지 않습니다. 공개 스키마는 `docs/apify-input-schema.json`에 저장했습니다.
 - 추천: 필수 지역·예산·방 유형·필수 옵션·이동시간을 먼저 검증. 정보 부족 후보를 `unverified`로 분리. 비용 50%, 이동시간 35%, 옵션 15% 기본값과 자연어 우선순위 변경(예: ‘비용 우선’)을 지원합니다. 누락된 항목의 점수를 다른 항목으로 재분배하지 않으며 점수 근거 비율과 수집일을 표시합니다.
 - 지도: 선택 매물 좌표를 OpenStreetMap iframe으로 표시. 대략적 좌표 표시이며 실제 경로 계산과 다릅니다. 최초 지도 선택 시 OSM 외부 요청이 발생합니다.
-- 일반 검색의 보행 경로 계산은 기본적으로 꺼져 있습니다. 활성화하면 보행 시간이 필요한 검색에서 지역·가격 등으로 후보를 좁힌 뒤 선택한 목적지까지 최대 5개 경로를 조회합니다. TMAP 응답의 전체 초를 분으로 올림하며 근사 매물 위치에는 해당 사실을 표시합니다. 도보 계산을 사용할 수 없으면 시간 조건은 미확인으로 표시됩니다. 운영 활성화에 필요한 TMAP 상품 확인 및 저장 조건은 [보행 경로 운영 안내](docs/TMAP.md)를 참고하세요.
+- 승인된 운영 사이트에서는 원주역·관악산역 등 공개된 역에서 인근 캠퍼스까지 TMAP 도보 경로를 계산할 수 있습니다. 선택한 지점은 대표 좌표입니다. 매물 공개 전에도 이 기능을 이용할 수 있습니다. 매물 조회 권한은 별도로 확인합니다.
+- 매물 검색에서는 이동시간을 요청했을 때 목적지를 먼저 확인합니다. 지역·가격 등으로 후보를 좁힌 뒤 최대 5건을 조회합니다. 자동차·대중교통의 실경로 계산은 미지원입니다. 일일 예산과 활성화·중지 방법은 [TMAP 운영 기준](docs/TMAP.md)을 참고하세요.
 
 | Endpoint | 동작 |
 | --- | --- |
 | POST `/api/conditions` | `{query,previous?,pending?}` → 확정 조건 또는 구분이 필요한 지역 질문·선택지 |
 | POST `/api/destinations` | `{query}` → 학교·직장 목적지 ID, 주소, 좌표 출처 |
+| GET `/api/routes/walking?places=public` | 공개 출발역과 인근 캠퍼스 목록 |
+| POST `/api/routes/walking` | `{publicOriginId,destinationId}` → 공개 장소 간 보행 경로 |
 | POST `/api/routes/walking` | `{listingId,destinationId,diagnostic?,confirmFreePlan?}` → 검증된 시간·거리 또는 미확인 사유 |
 | POST `/api/search` | `{query,confirmedConditions?,edits?,jobId?,destinationId?}` → 지역·조건·추천·미확인 후보 |
 | POST `/api/collect` | `{query,confirmedConditions?,edits?}` → 202, jobId/runId/state; 인증 필수 |
 | GET `/api/collect-status?jobId=...` | READY/RUNNING/SUCCEEDED/FAILED/ABORTED/TIMED-OUT 등 |
 | GET `/api/listings?jobId=...` | 성공 Dataset 정규화·중복 제거·원래 조건 추천 |
+| GET `/api/status?scope=coverage` | 제공 지역·건수·출처·갱신일 집계. 매물 비공개 시 일반 방문자에게 공개 상태만 반환 |
 | GET `/api/status` | 설정 여부만; 실호출 성공 증명이 아님 |
 
 `edits`는 location, destination, maxDeposit, maxRent, maxMonthlyTotal, maxCommuteMinutes, transportMode, weights를 지원합니다. 금액 단위는 만원입니다. 실데이터는 기본 관리자 인증이며 재배포 권리 검토 후에만 `DATA_RIGHTS_REVIEWED=true`를 적용하세요. 공개 모드여도 Gemini/신규 수집은 관리자 전용입니다.

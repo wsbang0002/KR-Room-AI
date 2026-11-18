@@ -21,6 +21,8 @@ let revision = 0;
 let active = null;
 let placeLookup = null;
 let inventoryPublic = null;
+let walkingEnabled = null;
+let routeInitialized = false;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -65,9 +67,86 @@ async function readPublicationState() {
   try {
     const data = await request('/api/status');
     inventoryPublic = typeof data.privateData === 'boolean' ? !data.privateData : null;
+    walkingEnabled = data.walking?.enabled === true && data.walking?.keyConfigured === true;
+    byId('publicationState').textContent = inventoryPublic === false ? '매물 공개 준비 중 · 조건만 미리 설정할 수 있어요.' :
+      inventoryPublic === true ? '수집된 지역의 매물을 검색할 수 있어요.' : '매물 공개 상태 미확인';
+    byId('walkingState').textContent = walkingEnabled ? 'TMAP 도보 경로 사용 가능' : '도보 시간 계산 비활성';
+    if (inventoryPublic === true) showInventory();
+    if (walkingEnabled && !routeInitialized) {
+      routeInitialized = true;
+      setupPublicRoute();
+    }
   } catch {
     inventoryPublic = null;
+    byId('publicationState').textContent = '지금은 매물 공개 상태를 확인할 수 없어요.';
+    byId('walkingState').textContent = '도보 경로 상태 미확인';
   }
+}
+
+async function showInventory() {
+  const node = byId('coverageSummary');
+  node.hidden = false;
+  node.textContent = '수집한 지역을 확인하고 있어요.';
+  try {
+    const data = await request('/api/status?scope=coverage');
+    if (inventoryPublic !== true || data.state === 'private') { node.replaceChildren(); node.hidden = true; return; }
+    node.textContent = searchInfo.inventorySummary(data);
+  } catch { node.textContent = '보유 지역과 매물 수를 확인할 수 없어요.'; }
+}
+
+async function setupPublicRoute() {
+  const section = byId('publicRoute');
+  const origin = byId('routeOrigin'), destination = byId('routeDestination');
+  const submit = byId('routeSubmit'), feedback = byId('routeFeedback');
+  const selectOption = (value, label) => new Option(label, value);
+  const placeOption = place => selectOption(place.id, [place.name, place.address].filter(Boolean).join(' · '));
+  section.hidden = false;
+  origin.disabled = true;
+  destination.disabled = true;
+  submit.disabled = true;
+  let locations;
+  try {
+    locations = await request('/api/routes/walking?places=public');
+    if (!locations.origins?.length || !locations.destinations?.length) throw Error();
+  } catch {
+    feedback.textContent = '공개 출발지와 목적지 목록을 불러오지 못했어요.';
+    return;
+  }
+  origin.replaceChildren(selectOption('', '출발지 선택'), ...locations.origins.map(placeOption));
+  destination.replaceChildren(selectOption('', '먼저 출발지를 선택하세요'));
+  origin.disabled = false;
+  function pickOrigin() {
+    const from = locations.origins.find(place => place.id === origin.value);
+    const places = locations.destinations.filter(place => from?.destinationIds?.includes(place.id));
+    destination.replaceChildren(selectOption('', '도착지 선택'), ...places.map(placeOption));
+    destination.disabled = !places.length;
+    submit.disabled = true;
+    feedback.textContent = '';
+  }
+  origin.addEventListener('change', pickOrigin);
+  destination.addEventListener('change', () => { submit.disabled = !destination.value; feedback.textContent = ''; });
+  byId('publicRouteForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (submit.disabled || !origin.value || !destination.value) return;
+    const from = origin.selectedOptions[0], to = destination.selectedOptions[0];
+    submit.disabled = true;
+    origin.disabled = true;
+    destination.disabled = true;
+    feedback.textContent = 'TMAP에서 보행 경로를 확인하고 있어요.';
+    try {
+      const route = await request('/api/routes/walking', {publicOriginId:from.value, destinationId:to.value});
+      if (route.status === 'success' && route.provider === 'tmap' && Number.isFinite(route.distanceMeters) && Number.isFinite(route.durationMinutes)) {
+        const updated = dateLabel(route.calculatedAt, true);
+        feedback.textContent = `${from.text.split(' · ')[0]} → ${to.text.split(' · ')[0]} · 도보 예상 ${route.durationMinutes}분 · ${number.format(route.distanceMeters)}m · TMAP · ${updated ? updated + ' 계산 (한국시간)' : '계산 시각 미확인'}${route.cacheHit ? ' · 저장된 경로' : ''}`;
+      } else {
+        const reasons = {'daily-limit':'오늘의 조회 한도에 도달했어요.', 'user-rate-limit':'요청이 많아요. 잠시 후 다시 시도해 주세요.',
+          'upstream-rate-limit':'경로 제공처의 요청 한도에 도달했어요.', disabled:'도보 경로 계산이 꺼져 있어요.',
+          'route-not-found':'이 구간의 보행 경로를 찾을 수 없어요.', timeout:'경로 응답이 지연되고 있어요.'};
+        feedback.textContent = '도보 시간 미확인. ' + (reasons[route.reason] || '이 경로를 지금 확인할 수 없어요.');
+      }
+    } catch (error) { feedback.textContent = '도보 시간 미확인. ' + error.message; }
+    finally { origin.disabled = false; destination.disabled = false; submit.disabled = false; }
+  });
 }
 
 const initialStatus = readPublicationState().then(() => {
@@ -94,11 +173,13 @@ function showConditions(c) {
   items.push(...(c.roomTypes || []).map(key => roomTypes[key] || key));
   items.push(...(c.requiredOptions || []).map(option => option + ' 필수'));
   items.push(...(c.preferredOptions || []).filter(option => !c.requiredOptions?.includes(option)).map(option => option + ' 선호'));
-  if (Number.isFinite(c.weights?.cost) && Math.abs(c.weights.cost - .5) > .001) items.push(`비용 비중 ${Math.round(c.weights.cost * 100)}%`);
+  if (Number.isFinite(c.weights?.cost) && Math.abs(c.weights.cost - .5) > .001) {
+    items.push(`비용 ${Math.round(c.weights.cost * 100)}% · 이동 ${Math.round(c.weights.commute * 100)}%`);
+  }
   byId('conditions').replaceChildren(...items.filter(Boolean).map(label => element('span', 'condition-chip', label)));
 }
 
-function offerRegions(response) {
+function offerClarification(response) {
   conversation.textContent = response.question;
   choices.replaceChildren();
   const candidates = response.candidates || [];
@@ -107,6 +188,10 @@ function offerRegions(response) {
   const area = (pendingBase?.location || '').split(' ');
   if (/[읍면동가]$/.test(area.at(-1))) area.pop();
   const option = address => {
+    if (response.kind === 'destination') {
+      const place = response.places?.find(item => item.name === address);
+      return button([address,place?.address].filter(Boolean).join(' · '), 'choice-button', () => submitTurn(address));
+    }
     const sameArea = area.length >= 2 && address.startsWith(area.join(' ') + ' ');
     const label = sameArea ? address + ' · 현재 검색 지역' : address;
     return button(label, 'choice-button', () => submitTurn(address));
@@ -119,7 +204,7 @@ function offerRegions(response) {
     });
     choices.append(more);
   }
-  input.placeholder = '예: 원주시요';
+  input.placeholder = response.kind === 'destination' ? '예: 강원대학교 원주캠퍼스' : '예: 원주시요';
 }
 
 function safeLink(label, href, className) {
@@ -193,28 +278,28 @@ function listingCard(room, conditions, unknown) {
     card.append(element('p', 'listing-meta', ['TMAP 보행 경로', destination?.name, route.originApproximate ? '대략적 매물 위치 기준' : null, dateLabel(route.calculatedAt, true)].filter(Boolean).join(' · ')));
   } else {
     const mode = modes[conditions.transportMode] || '이동';
-    const time = Number.isFinite(room.commuteMinutes) ? `${mode} 예상 ${room.commuteMinutes}분` : `${mode} 시간 미확인`;
+    const time = conditions.transportMode && conditions.transportMode !== 'walk' ? mode + ' 시간 계산 미지원' :
+      Number.isFinite(room.commuteMinutes) ? `${mode} 예상 ${room.commuteMinutes}분` : `${mode} 시간 미확인`;
     card.append(element('p', 'listing-commute', time));
     if (room.approximate !== false) card.append(element('p', 'listing-meta', '대략적 매물 위치'));
   }
   if (unknown && room.missingConditions?.length) card.append(element('p', 'listing-meta', '확인할 조건 · ' + room.missingConditions.join(', ')));
   if (room.options?.length) card.append(element('p', 'listing-meta', room.options.join(' · ')));
-  const checked = dateLabel(room.lastSeenAt || room.collectedAt);
-  if (checked) card.append(element('p', 'listing-meta', `최근 확인 ${checked}${room.syncStatus === 'stale' ? ' · 오래된 정보' : ''}`));
+  card.append(element('p', 'listing-meta', searchInfo.listingRecord(room)));
   if (validPoint(room)) card.append(listingMaps(room, destination));
   const source = safeLink('원본 매물 확인 ↗', room.url, 'listing-link');
   if (source) card.append(source);
   return card;
 }
 
-function destinationPicker(c, query, turn) {
+function destinationPicker(c, query, turn, lookupQuery) {
   const picker = element('form', 'destination-form');
   const label = element('label', '', '도착할 학교나 직장의 이름');
   const field = element('input');
   field.maxLength = 100;
   field.minLength = 2;
   field.required = true;
-  field.value = c.destination || '';
+  field.value = lookupQuery || c.destination || '';
   const find = element('button', 'choice-button', '목적지 찾기');
   find.type = 'submit';
   const message = element('p', 'muted');
@@ -246,7 +331,11 @@ function destinationPicker(c, query, turn) {
         matches.append(button([place.name, place.address].filter(Boolean).join(' · '), 'choice-button', () => {
           const next = startRequest();
           selectedPlace = place;
-          confirmed = {...confirmed, destination:place.name};
+          const draft = pending?.conditions || confirmed;
+          confirmed = {...draft, destination:place.name};
+          pending = null;
+          pendingBase = null;
+          queryBeforeClarification = '';
           choices.replaceChildren();
           showConditions(confirmed);
           conversation.textContent = '목적지를 ' + place.name + '로 정했어요.';
@@ -259,6 +348,7 @@ function destinationPicker(c, query, turn) {
       if (turn === revision && !lookup.signal.aborted) find.disabled = false;
     }
   });
+  if (lookupQuery) picker.requestSubmit();
 }
 
 async function loadListings(query, turn, conditions, destinationId) {
@@ -273,23 +363,11 @@ async function loadListings(query, turn, conditions, destinationId) {
   const data = await request('/api/search', {query, confirmedConditions:conditions, ...(destinationId ? {destinationId} : {})}, active.signal);
   if (turn !== revision) return;
   const c = data.conditions;
-  const matches = data.results.length;
   const unverified = data.unverified.length;
-  if (data.dataSource === 'snapshot-fallback' && data.count === 0) {
-    byId('results').dataset.state = 'error';
-    resultStatus.textContent = '매물 정보를 불러오지 못했어요. 잠시 후 다시 검색해 주세요.';
-    return;
-  }
-  byId('results').dataset.state = matches || unverified ? 'results' : 'empty';
-  const info = [];
-  if (matches) info.push(`조건에 맞는 매물 ${matches}개`);
-  else if (unverified) info.push('모든 조건이 확인된 매물은 아직 없어요.');
-  else info.push('현재 이 조건에 맞는 매물이 없어요. 지역이나 예산을 바꿔 보세요.');
-  if (unverified) info.push(`확인할 조건이 있는 매물 ${unverified}개`);
-  if (c.maxCommuteMinutes != null && data.walking?.status === 'disabled') info.push('현재 도보 시간을 확인할 수 없어요.');
-  if (data.parserReason === 'upstream-timeout') info.push('AI 응답이 지연되어 입력에서 확인한 조건을 적용했어요.');
-  if (data.dataSource === 'snapshot-fallback') info.push('매물 조회가 지연되어 기존 저장 자료를 확인했어요.');
-  resultStatus.textContent = info.join(' ');
+  const summary = searchInfo.resultStatus(data);
+  byId('results').dataset.state = summary.state;
+  const mobility = searchInfo.mobility(c, walkingEnabled);
+  resultStatus.textContent = [summary.text, mobility].filter(Boolean).join(' ');
   showConditions(c);
   byId('cards').replaceChildren(...data.results.map(room => listingCard(room, c, false)));
   byId('unknownCards').replaceChildren(...data.unverified.map(room => listingCard(room, c, true)));
@@ -319,6 +397,9 @@ function handleFailure(error, turn) {
   if (turn !== revision || error.name === 'AbortError') return;
   if (error.status === 401 || error.status === 403) {
     inventoryPublic = false;
+    byId('coverageSummary').replaceChildren();
+    byId('coverageSummary').hidden = true;
+    byId('publicationState').textContent = '매물 공개 준비 중 · 조건만 미리 설정할 수 있어요.';
     clearCards();
     showIdleStatus();
   } else {
@@ -340,15 +421,21 @@ async function submitTurn(query, fresh=false) {
   const originalQuery = wasPending ? queryBeforeClarification : query;
   conversation.textContent = '검색 조건을 확인하고 있어요.';
   try {
-    const data = await request('/api/conditions', {query, ...(previous ? {previous} : {}), ...(wasPending ? {pending} : {})}, active.signal);
+    const data = await request('/api/conditions', {query, ...(previous ? {previous} : {}), ...(wasPending ? {pending} : {}), ...(!fresh && selectedPlace?.id ? {destinationId:selectedPlace.id} : {})}, active.signal);
     if (turn !== revision) return;
     if (input.value === draftAtSubmit) input.value = '';
     choices.replaceChildren();
+    const info = searchInfo.interpretation(data.interpretation);
+    const mobility = searchInfo.mobility(data.conditions || data.pending?.conditions, walkingEnabled);
+    byId('interpretationNote').textContent = [info,mobility].filter(Boolean).join(' ');
     if (data.state === 'clarify') {
       pending = data.pending;
       pendingBase = previous;
       queryBeforeClarification = originalQuery;
-      offerRegions(data);
+      offerClarification(data);
+      if (data.kind === 'destination' && data.lookupQuery && !data.candidates?.length && inventoryPublic === true) {
+        destinationPicker(data.pending.conditions, originalQuery, turn, data.lookupQuery);
+      }
       input.focus({preventScroll:true});
       return;
     }
@@ -393,6 +480,7 @@ reset.addEventListener('click', () => {
   input.value = '';
   input.placeholder = initialPlaceholder;
   conversation.textContent = '';
+  byId('interpretationNote').textContent = '';
   choices.replaceChildren();
   byId('conditions').replaceChildren();
   clearCards();

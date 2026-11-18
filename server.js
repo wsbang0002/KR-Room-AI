@@ -14,7 +14,7 @@ import inspect from './api/redis-inspect.js';
 import integrations from './api/integrations.js';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const handlers={'/api/conditions':conditions,'/api/routes/walking':walking,'/api/destinations':destinations,'/api/search':search,'/api/status':status,'/api/collect':collect,'/api/collect-status':collectStatus,'/api/listings':listings,'/api/redis-inspect':inspect,'/api/integrations':integrations};
-const pages=new Map([['/','index.html'],['/index.html','index.html'],['/admin','admin/index.html'],['/admin/','admin/index.html'],['/admin/index.html','admin/index.html']]);
+const pages=new Map([['/','index.html'],['/index.html','index.html'],['/privacy.html','privacy.html'],['/terms.html','terms.html'],['/admin','admin/index.html'],['/admin/','admin/index.html'],['/admin/index.html','admin/index.html']]);
 const assetTypes={'.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webp':'image/webp','.ico':'image/x-icon','.woff2':'font/woff2'};
 const server=http.createServer(async(req,res)=>{
  res.status=code=>{res.statusCode=code;return res;};res.json=value=>{res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(value));};

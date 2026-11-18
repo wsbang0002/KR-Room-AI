@@ -8,6 +8,7 @@
   <title>운영 콘솔 | KNU Room AI</title>
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/admin/style.css">
+  <script src="/search-info.js" defer></script>
   <script src="/admin/app.js" defer></script>
 </head>
 <body>
@@ -31,6 +32,7 @@
     <h1>매물 운영</h1>
     <section class="panel" aria-labelledby="searchTitle">
       <h2 id="searchTitle">실매물 검색</h2>
+      <p id="inventorySummary" class="hint" aria-live="polite"></p>
       <form id="searchForm">
         <label for="query">검색 조건</label>
         <textarea id="query" required maxlength="1200" rows="2" placeholder="원주시 무실동, 관리비 포함 월 50만 원 이하"></textarea>
@@ -52,6 +54,7 @@
       <div id="regionChoices" aria-live="polite"></div>
       <p id="status" class="status" role="status"></p>
       <div id="conditions" class="chips"></div>
+      <p id="interpretationNote" class="hint"></p>
       <details id="mapPanel" hidden>
         <summary>매물과 목적지 지도</summary>
         <div class="map-points">

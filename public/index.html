@@ -1,22 +1,108 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KNU Room AI | 전국 자취방 탐색</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="shell nav"><div class="brand"><span class="logo">⌂</span><span>KNU <b>Room AI</b></span></div><span class="nav-note">원주에서 시작하는 전국 주거 탐색</span><span class="state">MVP v0.6</span></div></header><main class="shell"><section class="hero"><span class="eyebrow">🏠 SMART HOUSING SEARCH</span><h1>원하는 자취방을,<br><em>말하듯이 찾아보세요.</em></h1><p>월세만 보지 마세요. 관리비와 통학 시간까지 한눈에 비교합니다.</p></section><section class="search"><div class="section-title"><span>01</span><h2>자연어로 조건 검색</h2></div><label for="query">어떤 방을 원하시나요?</label><textarea id="query" maxlength="1200" rows="3" placeholder="예: 보증금 500만원 이하, 관리비 포함 45만원 이하, 학교 도보 15분 이내. 에어컨 있으면 좋겠어."></textarea><div class="examples"><button type="button" data-example="보증금 500만원 이하, 관리비 포함 45만원 이하, 학교 도보 15분 이내. 에어컨과 세탁기가 있으면 좋겠어.">💸 가성비 원룸</button><button type="button" data-example="월세 40만원 이하, 걸어서 10분. 통학 시간이 더 중요하고 에어컨은 필수야.">🚶 가까운 방</button><button type="button" data-example="보증금 300만원, 월세 35만원 이하. 생활비 우선, 세탁기 있는 방 찾아줘.">✨ 저예산 탐색</button></div><details><summary>지역·조건 수정 / 관리자 설정</summary><div class="controls">
-<label>지역 (시도·시군구·읍면동)<input id="location" placeholder="예: 서울 관악구 / 비우면 자연어 해석"></label>
-<div class="place-field">
-<label for="destination">도보 목적지</label>
-<div class="place-input"><input id="destination" maxlength="120" placeholder="학교·직장 이름 또는 주소" autocomplete="off"><button id="findDestinations" type="button">장소 찾기</button></div>
-<p id="destinationMessage" class="hint" aria-live="polite"></p>
-<ul id="destinationChoices" class="place-list" aria-label="목적지 후보" hidden></ul>
-</div>
-<label>보증금 상한 (만원)<input id="maxDeposit" type="number" min="0" max="100000"></label>
-<label>월세 상한 (만원)<input id="maxRent" type="number" min="0" max="100000"></label>
-<label>월 총비용 상한 (만원)<input id="maxMonthlyTotal" type="number" min="0" max="100000"></label>
-<label>이동시간 상한 (분)<input id="maxCommuteMinutes" type="number" min="0" max="240"></label>
-<label>이동수단<select id="transportMode"><option value="">자연어 해석</option><option value="walk">도보</option><option value="transit">대중교통</option><option value="car">자동차</option></select></label>
-<label>비용 비중 <output id="costValue">50%</output><input id="costWeight" type="range" min="0" max="85" value="50"></label>
-<label>관리자 인증키<input id="adminKey" type="password" autocomplete="off" placeholder="현재 화면 메모리에서만 사용"></label>
-</div><button id="checkConnections" type="button" disabled>API 연결 검사</button><p class="hint">관리자 키로 Redis, 기존 Apify 계정·Dataset과 TMAP 설정 및 오늘의 사용량을 확인합니다. 설정된 AI에 검색 조건 분석을 최대 1회 요청합니다.</p><pre id="integrationResult" aria-live="polite"></pre></details><div class="search-bottom"><label class="toggle"><input id="demo" type="checkbox" checked><span>가상 매물 데모 사용</span></label><button id="submit" class="primary">방 찾아보기 <span>↗</span></button></div><button id="cancel" type="button" disabled>검색 취소</button> <button id="collect" type="button" disabled>관리자: 최대 10건 신규 수집</button><p class="hint">데모는 가상 매물만 보여줍니다. 실매물 검색은 데모를 해제하세요. 기본 저장 데이터는 단계동·무실동 매물이며 학교 인근 여부가 검증되지 않았습니다. 실매물은 기본 관리자 전용입니다. 신규 수집은 비용 보호 설정이 완료된 환경에서만 가능합니다. 취소는 화면 조회를 중단하며 이미 시작한 유료 Actor 실행은 계속될 수 있습니다.</p></section><section class="results" aria-live="polite"><div class="section-title"><span>02</span><h2>조건 분석 및 추천 결과</h2></div><div id="status" class="status">위 예시를 선택하거나 원하는 조건을 작성한 뒤 검색하세요.</div><div id="conditions" class="chips"></div><div id="regionChoices"></div><details id="mapPanel" hidden>
-<summary>매물과 목적지 위치 지도</summary>
-<div class="map-points">
-<figure><figcaption id="mapNotice"></figcaption><iframe id="map" title="출발지 매물 위치" loading="lazy" referrerpolicy="no-referrer"></iframe></figure>
-<figure id="endMapPanel" hidden><figcaption id="endMapLabel"></figcaption><iframe id="endMap" title="도착지 위치" loading="lazy" referrerpolicy="no-referrer"></iframe></figure>
-</div>
-<p class="hint">지도 © OpenStreetMap 기여자</p></details><div id="cards" class="cards"></div><h3 id="unknownTitle" hidden>필수 정보 확인이 필요한 후보</h3><div id="unknownCards" class="cards"></div></section><section class="info"><h2>추천 기준</h2><div class="info-grid"><div><span>01</span><h3>월 실제 부담</h3><p>월세 + 관리비를 합산하고, 관리비 미확인 매물은 별도 표시합니다.</p></div><div><span>02</span><h3>학교까지 이동</h3><p>TMAP 보행 경로가 확인된 매물은 도보 시간으로 비교합니다. 출발 위치가 대략적이면 예상 시간에도 오차가 있습니다.</p></div><div><span>03</span><h3>조건에 맞는 추천</h3><p>필수 예산을 먼저 적용하고 비용·거리·옵션 선호도를 종합해 정렬합니다.</p></div></div></section></main><footer><div class="shell">KNU Room AI · 학생 프로젝트 시제품 · 제공된 매물정보의 가격·공실·위치를 계약 전 반드시 확인하세요.</div><p class="shell">행정구역 자료: 통계청 SGIS(공공누리 제1유형), vuski/admdongkor(CC BY 4.0), 2026-04-01 명칭 추출·재구성.</p></footer><script src="/app.js" defer></script></body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f1efe5">
+  <meta name="description" content="원하는 동네와 예산, 통학 조건을 말하듯 입력하고 월세와 관리비를 함께 비교하는 KNU Room AI.">
+  <title>KNU Room AI · 자취방 찾기</title>
+  <script src="/theme.js"></script>
+  <link rel="preload" as="image" href="/images/neighborhood.webp">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#search">방 검색으로 바로가기</a>
+  <header class="site-header">
+    <div class="shell masthead">
+      <a class="brand" href="/" aria-label="KNU Room AI 홈">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>KNU Room <b>AI</b></span>
+      </a>
+      <nav class="main-nav" aria-label="주요 메뉴">
+        <a href="#search">방 찾기</a>
+        <a href="#results">검색 결과</a>
+        <a href="#guide">이용 안내</a>
+      </nav>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="화면 테마 전환">
+        <span class="theme-moon" aria-hidden="true"></span>
+        <span class="theme-sun" aria-hidden="true">☀</span>
+        <span class="theme-label">테마 전환</span>
+      </button>
+    </div>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="heroTitle">
+      <div class="hero-picture" aria-hidden="true"><img src="/images/neighborhood.webp" alt="" fetchpriority="high"></div>
+      <div class="shell hero-inner">
+        <h1 id="heroTitle">어느 동네에<br><em>살고 싶나요?</em></h1>
+        <p>원하는 동네와 예산을 알려주세요.<br class="mobile-break"> 관리비와 통학시간까지 함께 살펴볼게요.</p>
+      </div>
+    </section>
+
+    <div class="shell work-area">
+      <section id="search" class="composer" aria-labelledby="queryLabel">
+        <div class="composer-head">
+          <h2><label for="query" id="queryLabel">어떤 방을 찾으세요?</label></h2>
+          <button class="reset" id="resetSearch" type="button" hidden>조건 초기화</button>
+        </div>
+        <form id="searchForm">
+          <div class="query-box">
+            <span class="query-glass" aria-hidden="true"></span>
+            <textarea id="query" rows="2" maxlength="1200" aria-describedby="queryHelp" placeholder="원주시 무실동에서 관리비 포함 월 50만 원 이하인 원룸 찾아줘"></textarea>
+            <button id="submit" class="search-action" type="submit"><span id="submitLabel">방 찾기</span><span class="arrow" aria-hidden="true">→</span></button>
+          </div>
+          <p id="queryHelp" class="sr-only">조건을 입력하고 검색하세요. 다음 입력에서 바꾸고 싶은 조건만 말할 수 있습니다.</p>
+        </form>
+        <div class="examples" aria-label="검색 예시">
+          <span class="example-label">이렇게 찾아보세요</span>
+          <button type="button" data-query="원주시 무실동에서 관리비 포함 월 50만 원 이하인 원룸 찾아줘">무실동 월 50만 원 이하</button>
+          <button type="button" data-query="강원대 원주캠퍼스까지 걸어서 15분 이내인 원룸 찾아줘">캠퍼스 도보 15분</button>
+          <button type="button" data-query="서울 관악구에서 보증금 500만 원 이하, 세탁기가 있는 원룸 찾아줘">관악구 보증금 500만 원</button>
+        </div>
+        <div id="conditions" class="condition-list" aria-label="적용한 검색 조건"></div>
+        <p id="conversation" class="conversation" role="status" aria-live="polite"></p>
+        <div id="regionChoices" class="choice-list"></div>
+      </section>
+
+      <section id="results" class="results" data-state="ready" aria-labelledby="resultsTitle">
+        <div class="section-heading">
+          <h2 id="resultsTitle">검색 결과</h2>
+        </div>
+        <div class="result-state">
+          <span class="result-symbol" aria-hidden="true"><i></i></span>
+          <p id="status" role="status" aria-live="polite">원하는 조건을 입력하면 여기에서 매물을 비교할 수 있어요.</p>
+        </div>
+        <div id="cards" class="listings"></div>
+        <h3 id="unknownTitle" class="unknown-title" hidden>조건 확인이 필요한 매물</h3>
+        <div id="unknownCards" class="listings"></div>
+      </section>
+
+      <section id="guide" class="guide" aria-labelledby="guideTitle">
+        <h2 id="guideTitle">이용 안내</h2>
+        <div class="guide-items">
+          <details>
+            <summary>검색하던 조건은 어떻게 바꾸나요?</summary>
+            <p>“지역만 단계동으로 바꿔줘”처럼 바꿀 내용만 이어서 입력하세요. 같은 이름의 동이 여러 곳이면 시·군·구를 한 번 더 확인해요. ‘조건 초기화’를 누르면 새로 시작할 수 있어요.</p>
+          </details>
+          <details>
+            <summary>월 총비용과 도보 시간은 어떻게 계산하나요?</summary>
+            <p>월 총비용은 월세와 관리비를 더한 금액이에요. 도보 시간은 확인된 보행 경로를 기준으로 표시해요. 매물이 대략적 위치로 등록된 경우 실제 출입구에서 출발하는 시간과 차이가 있을 수 있어요.</p>
+          </details>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <a class="footer-brand" href="/">KNU Room AI</a>
+      <div>
+        <p>매물의 가격과 공실 여부는 계약 전 확인해 주세요.</p>
+        <p>북촌 사진 <a href="https://commons.wikimedia.org/wiki/File:Bukchon-ro_11-gil_street_with_hanok_houses_at_sunrise_in_Bukchon_Hanok_Village_Seoul.jpg" rel="external">Basile Morin</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license">CC BY-SA 4.0</a> · WebP 축소</p>
+        <p>행정구역 자료 · 통계청 SGIS(공공누리 제1유형), vuski/admdongkor(CC BY 4.0), 2026.04.01 명칭 추출·재구성</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

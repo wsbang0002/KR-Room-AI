@@ -1,4 +1,5 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {parseConditions,normalize,rank,DEMO} from '../lib/core.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {parseConditions,normalize,rank} from '../lib/core.js';
+import {DEMO} from '../test-support/demo-listings.js';
 test('natural language extracts money and minutes',()=>{const a=parseConditions('보증금 500만원 이하, 관리비 포함 45만원 이하, 학교 도보 15분, 에어컨');assert.equal(a.maxDeposit,500);assert.equal(a.maxMonthly,45);assert.equal(a.maxWalk,15);assert.deepEqual(a.wants,['에어컨']);});
 test('fee missing is unknown, not 0',()=>{assert.equal(normalize({deposit:300,rent:35}).fee,null);});
 test('filters with total including fee',()=>{const x=rank(DEMO,{maxMonthly:42});assert.equal(x.some(r=>r.id==='demo-c'),true);assert.equal(x.some(r=>r.id==='demo-a'),true);assert.equal(x.some(r=>r.id==='demo-d'),false);});

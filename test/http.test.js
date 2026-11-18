@@ -11,7 +11,10 @@ test('local HTTP serves UI and enforces API methods, JSON, auth, safety defaults
  assert.equal((await fetch(base+'/')).status,200);assert.equal((await fetch(base+'/api/search')).status,405);
  assert.equal((await fetch(base+'/api/search',{method:'POST',body:'not-json'})).status,400);
  assert.equal((await fetch(base+'/api/search',{method:'POST',body:JSON.stringify({query:'서울 관악구 원룸'})})).status,401);
- const demo=await (await fetch(base+'/api/search',{method:'POST',body:JSON.stringify({query:'서울 관악구 원룸',demo:true})})).json();assert.equal(demo.mode,'demo');assert.ok(demo.results.length>0);
+ const retired=await fetch(base+'/api/search',{method:'POST',body:JSON.stringify({query:'서울 관악구 원룸',demo:true})});
+ assert.equal(retired.status,410);
+ const turn=await (await fetch(base+'/api/conditions',{method:'POST',body:JSON.stringify({query:'서울 관악구 원룸'})})).json();
+ assert.equal(turn.state,'ready');assert.equal(turn.conditions.location,'서울특별시 관악구');
  assert.equal((await fetch(base+'/api/redis-inspect')).status,401);assert.equal((await fetch(base+'/.env')).status,404);
  server.kill();await once(server,'exit');
 });

@@ -31,5 +31,11 @@
     }
   ],
   "framework": null,
-  "buildCommand": ""
+  "buildCommand": "",
+  "rewrites": [
+    {
+      "source": "/admin",
+      "destination": "/admin/index.html"
+    }
+  ]
 }

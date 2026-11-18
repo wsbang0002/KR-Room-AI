@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="light dark">
+  <title>운영 콘솔 | KNU Room AI</title>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/admin/style.css">
+  <script src="/admin/app.js" defer></script>
+</head>
+<body>
+<header><nav class="shell" aria-label="운영 메뉴">
+  <a class="brand" href="/" lang="en">KNU Room AI</a>
+  <span class="area">운영 콘솔</span>
+  <button id="themeToggle" type="button"><span class="theme-label">테마 전환</span></button>
+  <button id="signOut" type="button" hidden>로그아웃</button>
+</nav></header>
+<main class="shell">
+  <section class="panel sign-in" id="loginPanel" aria-labelledby="signinTitle">
+    <h1 id="signinTitle">운영자 로그인</h1>
+    <form id="loginForm">
+      <label for="adminKey">관리자 인증키</label>
+      <input id="adminKey" type="password" required maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none">
+      <button class="primary" type="submit">로그인</button>
+    </form>
+    <p id="loginMessage" class="hint" role="status"></p>
+  </section>
+  <div id="workspace" hidden>
+    <h1>매물 운영</h1>
+    <section class="panel" aria-labelledby="searchTitle">
+      <h2 id="searchTitle">실매물 검색</h2>
+      <form id="searchForm">
+        <label for="query">검색 조건</label>
+        <textarea id="query" required maxlength="1200" rows="2" placeholder="원주시 무실동, 관리비 포함 월 50만 원 이하"></textarea>
+        <div class="toolbar">
+          <button id="submit" type="submit" class="primary">매물 검색</button>
+          <button id="cancel" type="button" disabled>요청 취소</button>
+        </div>
+      </form>
+      <details>
+        <summary>도보 목적지 선택</summary>
+        <label for="destination">학교·직장 이름 또는 주소</label>
+        <div class="place-input">
+          <input id="destination" maxlength="120" autocomplete="off" placeholder="예: 강원대학교 원주캠퍼스">
+          <button id="findDestinations" type="button">장소 찾기</button>
+        </div>
+        <p id="destinationMessage" class="hint" aria-live="polite"></p>
+        <ul id="destinationChoices" class="place-list" aria-label="목적지 후보" hidden></ul>
+      </details>
+      <div id="regionChoices" aria-live="polite"></div>
+      <p id="status" class="status" role="status"></p>
+      <div id="conditions" class="chips"></div>
+      <details id="mapPanel" hidden>
+        <summary>매물과 목적지 지도</summary>
+        <div class="map-points">
+          <figure><figcaption id="mapNotice"></figcaption><iframe id="map" title="출발지 매물 위치" loading="lazy" referrerpolicy="no-referrer"></iframe></figure>
+          <figure id="endMapPanel" hidden><figcaption id="endMapLabel"></figcaption><iframe id="endMap" title="도착지 위치" loading="lazy" referrerpolicy="no-referrer"></iframe></figure>
+        </div>
+        <p class="hint">지도 © OpenStreetMap 기여자</p>
+      </details>
+      <div id="cards" class="cards"></div>
+      <h3 id="unknownTitle" hidden>필수 정보 확인이 필요한 매물</h3>
+      <div id="unknownCards" class="cards"></div>
+    </section>
+    <section class="panel" aria-labelledby="checksTitle">
+      <h2 id="checksTitle">서비스 연결</h2>
+      <p class="hint">Redis, 기존 Apify Dataset·계정 한도, TMAP 설정을 확인합니다. AI 분석기는 생성 요청을 최대 1회 실행합니다.</p>
+      <button id="checkConnections" type="button">연결 검사</button>
+      <pre id="integrationResult" role="status"></pre>
+    </section>
+    <section class="panel" aria-labelledby="collectTitle">
+      <h2 id="collectTitle">신규 매물 수집</h2>
+      <p class="hint">확정한 지역의 매물을 최대 10건 수집합니다. Actor 실행 시 비용이 발생할 수 있으며, 요청 취소 후에도 실행된 작업은 계속될 수 있습니다.</p>
+      <button id="collect" type="button" disabled>Apify 수집 시작</button>
+    </section>
+  </div>
+</main>
+</body>
+</html>

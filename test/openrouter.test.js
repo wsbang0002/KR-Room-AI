@@ -38,6 +38,7 @@ test('free search and admin check use only the zero-price route, ignore client o
  assert.equal(init.redirect,'error');
  const body=JSON.parse(init.body);
  assert.equal(body.model,'openrouter/free');
+ assert.equal(body.reasoning.effort,'none');
  assert.equal(body.provider.max_price.prompt,'0');
  assert.equal(body.provider.max_price.completion,'0');
  assert.equal(body.provider.max_price.request,'0');

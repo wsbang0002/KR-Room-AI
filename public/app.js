@@ -12,9 +12,11 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
  if(c.maxCommuteMinutes!=null)chip(`${c.transportMode} ≤ ${c.maxCommuteMinutes}분`);
  c.preferredOptions.forEach(x=>chip(`선호: ${x}`));c.requiredOptions.forEach(x=>chip(`필수: ${x}`));chip(`비용 비중 ${Math.round(c.weights.cost*100)}%`);
  const parserLabel={
-  local:data.parserReason==='upstream-timeout'?'Gemini 응답 지연 · 기본 파서로 해석한 조건':'기본 파서로 해석한 조건',
+  local:data.parserReason==='upstream-timeout'?'AI 응답 지연 · 기본 파서로 해석한 조건':'기본 파서로 해석한 조건',
   gemini:'Gemini로 해석한 조건',
-  'gemini-cache':'이전에 Gemini로 해석한 조건'
+  'gemini-cache':'이전에 Gemini로 해석한 조건',
+  openrouter:'OpenRouter 무료 모델로 해석한 조건',
+  'openrouter-cache':'이전에 OpenRouter 무료 모델로 해석한 조건'
  }[data.parser];
  status.textContent=`${data.mode==='demo'?'가상 데모':data.dataSource} · 조건 충족 ${data.results.length}건 / 확인 필요 ${data.unverified.length}건 · ${parserLabel} · ${data.notice} ${(c.warnings||[]).join(' ')}`;
  if(!data.results.length)cards.append(make('div','status','조건이 확인된 매물이 없습니다. 지역·예산을 수정하거나 확인 필요 후보를 살펴보세요.'));
@@ -51,8 +53,26 @@ $('checkConnections').onclick=async()=>{
  const statuses={verified:'검증 성공',missing:'환경변수 미설정',blocked:'선행 설정 필요',failed:'검증 실패',partial:'부분 구현'};
  const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');
  try{
-  const storage=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'storage'})});output.textContent=renderChecks(storage)+'\nGemini 연결 검사 중…';
-  const model=await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini-model'})});output.textContent=renderChecks({...storage,...model})+'\nGemini 생성 검사 중…';
-  const ai=model.geminiModel?.status==='verified'?await request('/api/integrations',{method:'POST',body:JSON.stringify({service:'gemini'})}):{gemini:{status:'blocked',message:'먼저 모델 접근 검사를 통과해야 생성 요청을 실행합니다.'}};output.textContent=renderChecks({...storage,...model,...ai})+'\n신규 유료 Actor 실행: 없음';
+  const check=service=>request('/api/integrations',{method:'POST',body:JSON.stringify({service})});
+  const storage=await check('storage');
+  const results={...storage};
+  if(storage.analysisProvider==='openrouter-free'){
+   output.textContent=renderChecks(storage)+'\nOpenRouter 무료 모델 검사 중…';
+   Object.assign(results,await check('openrouter'));
+  }else if(storage.analysisProvider==='gemini'){
+   output.textContent=renderChecks(storage)+'\nGemini 연결 검사 중…';
+   const model=await check('gemini-model');
+   Object.assign(results,model);
+   if(model.geminiModel?.status==='verified'){
+    output.textContent=renderChecks(results)+'\nGemini 생성 검사 중…';
+    Object.assign(results,await check('gemini'));
+   }else{
+    results.gemini={status:'blocked',message:'먼저 모델 접근 검사를 통과해야 생성 요청을 실행합니다.'};
+   }
+  }else{
+   output.textContent=renderChecks(storage)+'\n검색 조건은 기본 파서로 해석합니다.';
+   return;
+  }
+  output.textContent=renderChecks(results)+'\n신규 유료 Actor 실행: 없음';
  }catch(e){output.textContent+='\n'+(e.name==='AbortError'?'조회 취소':e.message);}finally{busy(false);}
 };

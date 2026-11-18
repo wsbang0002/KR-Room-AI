@@ -58,3 +58,11 @@ OSM 지도는 별도 키 없이 표시합니다. TMAP 도보/자동차는 어댑
 연결 검사에서 `geminiModel`은 서버에 등록한 키로 모델 메타데이터를 읽어 `generateContent` 지원 여부를 먼저 확인합니다(생성 요청 없음, 5분 캐시·별도 일일 제한). 이 검사를 통과할 때만 Gemini 생성 검사를 실행합니다. 일반 검색은 Gemini 생성 응답을 최대 5초 기다린 후 기본 파서로 조건을 해석합니다. 관리자 생성 검사의 기본 대기 시간은 35초입니다. 기존 `GEMINI_TIMEOUT_MS`로 각 대기 시간을 1초까지 단축할 수 있습니다. Redis와 매물 조회 시간은 별도로 소요되며 Vercel 함수 제한은 60초입니다. Google의 503·요청 시간초과는 앱 설정 변경만으로 해결된다고 보장할 수 없습니다.
 
 관리자 요청 `POST /api/integrations`에 `{"service":"gemini-interactions"}`를 보내면 같은 키와 모델로 Google Interactions API의 구조화 출력을 검사합니다. 고정 문구에서 서울 관악구와 월세 40만원을 모두 추출해야 성공입니다. 두 생성 경로는 일일 20회 한도를 공유하며 한 요청에서 호출하는 경로는 하나입니다. 검색에 이 경로를 선택하려면 Vercel Production에 `GEMINI_API_METHOD=interactions`를 적용하고 재배포합니다. Google 요청에는 `store:false`가 적용됩니다. [Google Interactions API](https://aistudio.google.com/docs/interactions-overview)
+
+## OpenRouter 무료 모델로 검색 조건 해석하기
+
+1. [OpenRouter 키 관리](https://openrouter.ai/settings/keys)에서 무료 계정의 API 키를 발급합니다. 결제 수단, 크레딧 충전, 외부 모델 제공자의 유료 키 연결은 필요하지 않습니다.
+2. Vercel 프로젝트의 **Settings → Environment Variables → Production**에 `AI_PROVIDER=openrouter-free`와 `OPENROUTER_API_KEY`를 등록합니다. 키는 Sensitive로 저장하고 재배포합니다.
+3. 사이트의 관리자 설정에서 **API 연결 검사**를 실행합니다. 고정 예문에서 서울 관악구와 월세 40만원을 모두 확인하면 검증 성공을 표시합니다. 재검사에서 캐시를 사용했는지도 표시합니다. 실제 검색은 가상 매물 데모를 해제하고 진행합니다.
+
+검색 문장은 서버에서 OpenRouter와 선택된 무료 모델 제공자에게 전송됩니다. 앱은 생성 전 OpenRouter 키 정보의 `is_free_tier`가 `true`인지 확인합니다. 무료 등급을 확인할 수 없으면 기본 파서를 사용합니다. 앱은 `openrouter/free`로만 텍스트 분석을 요청하고 가격 상한을 0으로 지정합니다. Redis로 앱의 OpenRouter 생성을 하루 20회로 제한합니다. 무료 모델 가용량, 공급자 한도, 5초 검색 대기 시간을 초과하면 로컬 파서가 조건을 해석합니다. [무료 라우터 정책](https://openrouter.ai/docs/guides/routing/routers/free-router) · [호출 한도](https://openrouter.ai/docs/api/reference/limits)

@@ -1,7 +1,7 @@
 import {DEMO} from '../lib/core.js';
 import {loadListings} from '../lib/apify.js';
 import {buildConditions} from '../lib/conditions.js';
-import {analyze} from '../lib/gemini.js';
+import {analyzeSearch} from '../lib/gemini.js';
 import {recommend} from '../lib/recommend.js';
 import {redis} from '../lib/store.js';
 import {storedListings} from '../lib/listing-store.js';
@@ -18,7 +18,7 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
  };
  let initialLocation=null;try{initialLocation=buildConditions(text,null,body.edits).location;}catch{}
  const earlyLoad=!demo&&!body.jobId&&initialLocation?loadAvailable(initialLocation).catch(()=>null):null;
- const parsed=demo?{ai:null,parser:'local',parserReason:'demo-no-api'}:await analyze(text,{req,env,fetcher,store});
+ const parsed=demo?{ai:null,parser:'local',parserReason:'demo-no-api'}:await analyzeSearch(text,{req,env,fetcher,store});
  let conditions;try{conditions=buildConditions(text,parsed.ai,body.edits);}catch{throw new HttpError(400,'검색 조건의 값과 범위를 확인해 주세요.');}
  if(conditions.region.status!=='resolved')return {status:422,data:{error:conditions.region.status==='ambiguous'?'동명이인 지역입니다. 시도·시군구를 선택해 주세요.':'지역을 확인할 수 없습니다. 행정구역 전체 이름을 입력해 주세요.',region:conditions.region}};
  let loaded;

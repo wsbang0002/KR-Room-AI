@@ -11,7 +11,12 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
  for(const [key,label] of [['maxDeposit','보증금'],['maxMonthlyTotal','월 총비용'],['maxRent','월세']])if(c[key]!=null)chip(`${label} ≤ ${fmt(c[key])}`);
  if(c.maxCommuteMinutes!=null)chip(`${c.transportMode} ≤ ${c.maxCommuteMinutes}분`);
  c.preferredOptions.forEach(x=>chip(`선호: ${x}`));c.requiredOptions.forEach(x=>chip(`필수: ${x}`));chip(`비용 비중 ${Math.round(c.weights.cost*100)}%`);
- status.textContent=`${data.mode==='demo'?'가상 데모':data.dataSource} · 조건 충족 ${data.results.length}건 / 확인 필요 ${data.unverified.length}건 · 분석 ${data.parser} · ${data.notice} ${(c.warnings||[]).join(' ')}`;
+ const parserLabel={
+  local:data.parserReason==='upstream-timeout'?'Gemini 응답 지연 · 기본 파서로 해석한 조건':'기본 파서로 해석한 조건',
+  gemini:'Gemini로 해석한 조건',
+  'gemini-cache':'이전에 Gemini로 해석한 조건'
+ }[data.parser];
+ status.textContent=`${data.mode==='demo'?'가상 데모':data.dataSource} · 조건 충족 ${data.results.length}건 / 확인 필요 ${data.unverified.length}건 · ${parserLabel} · ${data.notice} ${(c.warnings||[]).join(' ')}`;
  if(!data.results.length)cards.append(make('div','status','조건이 확인된 매물이 없습니다. 지역·예산을 수정하거나 확인 필요 후보를 살펴보세요.'));
  function card(r,i,unknown){const el=make('article',unknown?'room unknown':'room');const top=make('div','room-top');top.append(make('h3','',r.title));top.append(make('span','pill',unknown?'확인 필요':`추천 ${i+1}순위`));el.append(top);
  el.append(make('div','price',r.total==null?'월 총액 미확인':`월 ${fmt(r.total)}`));el.append(make('p','metadata',`보증금 ${fmt(r.deposit)} · 월세 ${fmt(r.rent)} · 관리비 ${fmt(r.fee)}`));

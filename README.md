@@ -12,16 +12,18 @@ npm.cmd test
 npm.cmd run dev
 ```
 
-http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 수정할 수 있습니다. 예를 들어 ‘원주시 무실동, 관리비 포함 월 50만 원 이하’ 뒤에 ‘중앙동으로 바꿔줘’라고 하면 같은 이름의 동을 조회해 시·군·구를 묻습니다. ‘원주시요’라고 답하거나 주소를 선택하면 예산을 유지합니다. 기본 운영 설정에서는 매물 공개 준비 상태를 표시합니다.
+http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 수정할 수 있습니다. 예를 들어 ‘원주시 무실동, 관리비 포함 월 50만 원 이하’ 뒤에 ‘중앙동으로 바꿔줘’라고 하면 같은 이름의 동을 조회해 시·군·구를 묻습니다. ‘원주시요’라고 답하거나 주소를 선택하면 예산을 유지합니다. 기본 운영 설정에서 로그인 전에는 검색 조건을 정리할 수 있습니다.
 
-운영자는 `/admin`에서 서버의 `ADMIN_API_KEY`로 로그인해 비공개 실매물 조회, 연결 검사, 수집을 관리합니다. 브라우저는 키를 페이지 메모리에서만 사용합니다. 로그아웃하거나 페이지를 닫으면 다시 입력해야 합니다.
+비공개 실매물을 보려면 홈 상단 **로그인**을 누르고 Vercel에 설정한 32자리 `ADMIN_API_KEY`를 입력하세요. 같은 화면에서 지역과 예산으로 저장된 매물을 검색할 수 있습니다. 서버는 검색용 쿠키(`HttpOnly`, `SameSite=Strict`)를 발급합니다. 브라우저는 새로고침 후에도 로그인을 유지하며, 1시간이 지나거나 **로그아웃**을 누르면 다시 키가 필요합니다.
+
+연결 검사와 신규 수집은 운영 콘솔 `/admin`에서 관리합니다. 운영 콘솔은 키를 페이지 메모리에서만 사용하며 별도의 Bearer 인증을 요구합니다. 같은 키로 운영 기능에도 접근할 수 있으므로 운영 권한이 있는 사람만 보관하세요.
 
 `data/listings.json`은 단계동·무실동 스냅샷이며 흥업면/캠퍼스 주변으로 치환하지 않습니다. 기본 지역 검색에서는 필수 지역을 확인할 수 없는 후보로 분리되거나 제외됩니다. `강원 원주시`를 명시하면 원주 스냅샷을 검색할 수 있습니다. 관리비는 만원, Apify 원본 `maintenance_cost`만 원→만원 변환합니다. 옵션 빈 배열·미확인 시간은 충족으로 간주하지 않습니다. 원본 사진을 재게시하지 않습니다.
 
 ## 기능과 API
 
 - 전국 지역: 17개 시도, 시군구·읍면동 명칭 검색과 중복 지명 선택. `data/regions.json`은 SGIS / vuski/admdongkor 행정구역 인덱스의 **2026-04-01** 명칭을 추출한 3,830개 항목입니다. 요청 명세의 광주·전남 별도 구성을 지원하기 위해 이 시점을 고정했습니다. 최신 행정개편 및 법정동과 행정동의 차이는 별도 검증 대상입니다. 미등록 명칭을 실존 지역으로 추정하지 않습니다. 출처·라이선스는 `docs/LICENSE-regions.txt` 참조.
-- 자연어 검색은 지역 명칭과 이전 조건을 서버에서 확인합니다. 관리자 검색이나 매물 공개 후 무료 OpenRouter가 설정된 첫 검색에서는 AI가 추가 조건을 해석할 수 있습니다. 공개 준비 중인 일반 검색과 지역 확인 응답은 자체 파서를 사용합니다. 무료 모델의 단가 제한과 Redis 일일 예산을 적용합니다.
+- 자연어 검색은 지역 명칭과 이전 조건을 서버에서 확인합니다. 로그인 후 새 검색을 시작하면 설정된 AI가 추가 조건을 해석할 수 있습니다. 매물 공개 후에는 비로그인 검색에도 무료 OpenRouter를 사용할 수 있습니다. 비공개 운영 중 로그인 전의 조건 정리와 지역 확인 응답은 자체 파서를 사용합니다. 무료 모델의 단가 제한과 Redis 일일 예산을 적용합니다.
 - Apify: 고정 Dataset 조회·수동 import 유지. 지역별 신규 Actor는 비동기 시작→상태 조회→Dataset 조회. Actor와 빌드 `1.0.12`는 서버 고정이며 임의 Actor/URL/건수/비용을 받지 않습니다. 공개 스키마는 `docs/apify-input-schema.json`에 저장했습니다.
 - 추천: 필수 지역·예산·방 유형·필수 옵션·이동시간을 먼저 검증. 정보 부족 후보를 `unverified`로 분리. 비용 50%, 이동시간 35%, 옵션 15% 기본값과 자연어 우선순위 변경(예: ‘비용 우선’)을 지원합니다. 누락된 항목의 점수를 다른 항목으로 재분배하지 않으며 점수 근거 비율과 수집일을 표시합니다.
 - 지도: 선택 매물 좌표를 OpenStreetMap iframe으로 표시. 대략적 좌표 표시이며 실제 경로 계산과 다릅니다. 최초 지도 선택 시 OSM 외부 요청이 발생합니다.
@@ -30,6 +32,8 @@ http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 �
 
 | Endpoint | 동작 |
 | --- | --- |
+| POST `/api/session` | 로그인 키를 Bearer로 검증하고 매물 검색용 쿠키 발급 |
+| GET / DELETE `/api/session` | 검색 로그인 상태 확인 / 현재 브라우저에서 로그아웃 |
 | POST `/api/conditions` | `{query,previous?,pending?}` → 확정 조건 또는 구분이 필요한 지역 질문·선택지 |
 | POST `/api/destinations` | `{query}` → 학교·직장 목적지 ID, 주소, 좌표 출처 |
 | GET `/api/routes/walking?places=public` | 공개 출발역과 인근 캠퍼스 목록 |
@@ -39,10 +43,10 @@ http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 �
 | POST `/api/collect` | `{query,confirmedConditions?,edits?}` → 202, jobId/runId/state; 인증 필수 |
 | GET `/api/collect-status?jobId=...` | READY/RUNNING/SUCCEEDED/FAILED/ABORTED/TIMED-OUT 등 |
 | GET `/api/listings?jobId=...` | 성공 Dataset 정규화·중복 제거·원래 조건 추천 |
-| GET `/api/status?scope=coverage` | 제공 지역·건수·출처·갱신일 집계. 매물 비공개 시 일반 방문자에게 공개 상태만 반환 |
+| GET `/api/status?scope=coverage` | 제공 지역·건수·출처·갱신일 집계. 비공개 운영 중 로그인 전에는 공개 상태만 반환 |
 | GET `/api/status` | 설정 여부만; 실호출 성공 증명이 아님 |
 
-`edits`는 location, destination, maxDeposit, maxRent, maxMonthlyTotal, maxCommuteMinutes, transportMode, weights를 지원합니다. 금액 단위는 만원입니다. 실데이터는 기본 관리자 인증이며 재배포 권리 검토 후에만 `DATA_RIGHTS_REVIEWED=true`를 적용하세요. 공개 모드여도 Gemini/신규 수집은 관리자 전용입니다.
+`edits`는 location, destination, maxDeposit, maxRent, maxMonthlyTotal, maxCommuteMinutes, transportMode, weights를 지원합니다. 금액 단위는 만원입니다. `DATA_RIGHTS_REVIEWED=false`이면 홈에서 로그인한 뒤 실매물을 조회할 수 있습니다. 재게시 권리를 검토한 뒤에만 공개 설정을 변경하세요. 검색용 세션은 운영 진단과 신규 수집 권한을 부여하지 않습니다.
 
 ## 신규 유료 수집 보호
 
@@ -138,4 +142,4 @@ Lua 예약에서 **관측 사용량 상한 + 이 앱의 월간 예약 비용 + �
 
 ## API 일괄 연결
 
-키를 확인하는 공식 링크, Vercel 일괄 등록 변수와 사이트의 관리자 **API 연결 검사** 사용법은 [docs/API_SETUP.md](docs/API_SETUP.md)를 확인하세요. 통합 검사는 신규 유료 Actor를 실행하지 않으며 Redis·Apify 읽기와 명시적인 Gemini 테스트만 수행합니다.
+키를 확인하는 공식 링크, Vercel 일괄 등록 변수와 운영 콘솔의 **연결 검사** 사용법은 [docs/API_SETUP.md](docs/API_SETUP.md)를 확인하세요. 통합 검사는 신규 유료 Actor를 실행하지 않으며 Redis·Apify 읽기와 명시적인 AI 테스트를 수행합니다.

@@ -38,7 +38,9 @@ Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**�
 
 ## 3. 버튼 하나로 연결 검사
 
-https://kr-room-ai.vercel.app/ 에서 **지역·조건 수정 / 관리자 설정**을 펼칩니다. 설정한 ADMIN_API_KEY를 관리자 인증키 입력란에 넣고 **API 연결 검사**를 누릅니다.
+비공개 매물을 검색하려면 홈 상단의 **로그인**을 누르고 기존 32자리 `ADMIN_API_KEY`를 입력하세요. 같은 화면에서 매물을 검색할 수 있습니다. **로그아웃**을 누르거나 1시간이 지나면 검색 세션이 끝납니다. [KNU Room AI 홈](https://kr-room-ai.vercel.app/)
+
+외부 서비스 연결을 검사하려면 운영 콘솔에서 같은 키로 별도 로그인한 뒤 **서비스 연결 → 연결 검사**를 누릅니다. [운영 콘솔](https://kr-room-ai.vercel.app/admin)
 
 - Redis: PING과 SCAN만 수행합니다. 기존 키의 값과 이름은 결과 화면에 노출하지 않고 개수만 표시합니다. 기존 키를 삭제하지 않습니다.
 - Apify 계정: Limits API로 토큰·현재 사용량·계정 $5 이하 한도·과금 주기를 확인합니다. 한도 안전 여부와 인증 성공을 구분합니다.
@@ -63,6 +65,6 @@ OSM 지도는 별도 키 없이 표시합니다. TMAP 도보/자동차는 어댑
 
 1. [OpenRouter 키 관리](https://openrouter.ai/settings/keys)에서 무료 계정의 API 키를 발급합니다. 결제 수단, 크레딧 충전, 외부 모델 제공자의 유료 키 연결은 필요하지 않습니다.
 2. Vercel 프로젝트의 **Settings → Environment Variables → Production**에 `AI_PROVIDER=openrouter-free`와 `OPENROUTER_API_KEY`를 등록합니다. 키는 Sensitive로 저장하고 재배포합니다.
-3. 사이트의 관리자 설정에서 **API 연결 검사**를 실행합니다. 고정 예문에서 서울 관악구와 월세 40만원을 모두 확인하면 검증 성공을 표시합니다. 재검사에서 캐시를 사용했는지도 표시합니다. 실제 검색은 가상 매물 데모를 해제하고 진행합니다.
+3. 운영 콘솔에서 **연결 검사**를 실행합니다. 고정 예문에서 서울 관악구와 월세 40만원을 모두 확인하면 검증 성공을 표시합니다. 재검사에서 캐시를 사용했는지도 표시합니다. 실제 매물은 홈에 로그인한 뒤 검색하세요.
 
 검색 문장은 서버에서 OpenRouter와 선택된 무료 모델 제공자에게 전송됩니다. 앱은 생성 전 OpenRouter 키 정보의 `is_free_tier`가 `true`인지 확인합니다. 무료 등급을 확인할 수 없으면 기본 파서를 사용합니다. 앱은 OpenRouter의 `inclusionai/ling-3.2-flash:free` 모델로만 텍스트 분석을 요청하고 가격 상한을 0으로 지정합니다. Redis로 앱의 OpenRouter 생성을 하루 20회로 제한합니다. 무료 모델 가용량, 공급자 한도, 5초 검색 대기 시간을 초과하면 로컬 파서가 조건을 해석합니다. [무료 모델 정책](https://openrouter.ai/docs/guides/routing/model-variants/free) · [호출 한도](https://openrouter.ai/docs/api/reference/limits)

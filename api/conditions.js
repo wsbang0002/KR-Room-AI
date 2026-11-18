@@ -1,11 +1,10 @@
 import {isFreshTurn,searchTurn} from '../lib/search-turn.js';
 import {unsupportedConditions,validateAI} from '../lib/conditions.js';
 import {analyzeSearch,selectedProvider} from '../lib/gemini.js';
-import {admin,endpoint} from '../lib/security.js';
+import {authenticatedReader,endpoint} from '../lib/security.js';
 
 export async function handleConditions(body,{req,env=process.env,fetcher=fetch,store,analyze=analyzeSearch}={}){
- const authenticated=Boolean(req?.headers?.authorization);
- if(authenticated)admin(req,env);
+ const authenticated=Boolean(authenticatedReader(req,env));
  const local=searchTurn(body);
  const fresh=isFreshTurn(body.query);
  const input=!fresh&&body.pending?.query?body.pending.query:body.query;

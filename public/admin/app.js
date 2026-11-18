@@ -35,7 +35,7 @@ $('loginForm').onsubmit=async e=>{
  e.preventDefault();
  const input=$('adminKey'),key=input.value;
  if(!/^[\x21-\x7e]{24,512}$/.test(key)){
-  $('loginMessage').textContent='공백 없이 영문·숫자·기호로 된 관리자 키를 입력하세요.';return;
+  $('loginMessage').textContent='공백 없이 영문·숫자·기호로 된 로그인 키를 입력하세요.';return;
  }
  controller?.abort();
  const login=new AbortController();controller=login;
@@ -44,7 +44,7 @@ $('loginForm').onsubmit=async e=>{
  try{
   const config=await request('/api/status?scope=admin',{signal:login.signal},key);
   if(login.signal.aborted)return;
-  if(config.adminAuthenticated!==true)throw Error('관리자 인증을 확인할 수 없습니다.');
+  if(config.adminAuthenticated!==true)throw Error('로그인을 확인할 수 없습니다.');
   credential=key;input.value='';liveCollection=config.liveCollectionEnabled===true;
   $('loginMessage').textContent='';$('loginPanel').hidden=true;$('workspace').hidden=false;$('signOut').hidden=false;
   walkingEnabled=config.walking?.enabled===true&&config.walking?.keyConfigured===true;

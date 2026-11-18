@@ -10,7 +10,7 @@ const initialSubmitLabel = byId('submitLabel').textContent;
 const number = new Intl.NumberFormat('ko-KR');
 const roomTypes = {ONE_ROOM:'원룸', TWO_ROOM:'투룸', THREE_ROOM:'쓰리룸', FOUR_ROOM:'포룸', OFFICETEL:'오피스텔', APT:'아파트'};
 const modes = {walk:'도보', transit:'대중교통', car:'자동차'};
-const prelaunch = '매물 공개 준비 중입니다. 검색 조건은 미리 정해 둘 수 있어요.';
+const signInPrompt = '오른쪽 위의 로그인 버튼을 눌러 조건에 맞는 매물을 확인하세요.';
 
 let confirmed = null;
 let pending = null;
@@ -21,6 +21,9 @@ let revision = 0;
 let active = null;
 let placeLookup = null;
 let inventoryPublic = null;
+let signedIn = false;
+let waitingSearch = null;
+let coverageRequest = null;
 let walkingEnabled = null;
 let routeInitialized = false;
 
@@ -57,10 +60,28 @@ function clearCards() {
   byId('unknownTitle').hidden = true;
 }
 
+function canSearch() {
+  return signedIn || inventoryPublic === true;
+}
+
 function showIdleStatus() {
-  byId('results').dataset.state = inventoryPublic === null ? 'error' : inventoryPublic ? 'ready' : 'private';
-  resultStatus.textContent = inventoryPublic === false ? prelaunch :
-    inventoryPublic === true ? '검색 조건을 입력하면 매물을 확인할 수 있어요.' : '지금은 매물 공개 상태를 확인할 수 없어요.';
+  byId('results').dataset.state = canSearch() ? 'ready' : inventoryPublic === false ? 'private' : 'error';
+  resultStatus.textContent = canSearch() ? '검색 조건을 입력하면 매물을 확인할 수 있어요.' :
+    inventoryPublic === false ? signInPrompt : '지금은 매물 공개 상태를 확인할 수 없어요.';
+}
+
+function showAccess() {
+  byId('publicationState').textContent = signedIn ? '로그인됨 · 수집된 매물을 검색할 수 있어요.' :
+    inventoryPublic === true ? '수집된 지역의 매물을 검색할 수 있어요.' :
+    inventoryPublic === false ? '로그인하면 수집된 매물을 검색할 수 있어요.' : '매물 공개 상태 미확인';
+  if (canSearch()) {
+    if (!coverageRequest) showInventory();
+  } else {
+    coverageRequest?.abort();
+    coverageRequest = null;
+    byId('coverageSummary').replaceChildren();
+    byId('coverageSummary').hidden = true;
+  }
 }
 
 async function readPublicationState() {
@@ -68,30 +89,35 @@ async function readPublicationState() {
     const data = await request('/api/status');
     inventoryPublic = typeof data.privateData === 'boolean' ? !data.privateData : null;
     walkingEnabled = data.walking?.enabled === true && data.walking?.keyConfigured === true;
-    byId('publicationState').textContent = inventoryPublic === false ? '매물 공개 준비 중 · 조건만 미리 설정할 수 있어요.' :
-      inventoryPublic === true ? '수집된 지역의 매물을 검색할 수 있어요.' : '매물 공개 상태 미확인';
     byId('walkingState').textContent = walkingEnabled ? 'TMAP 도보 경로 사용 가능' : '도보 시간 계산 비활성';
-    if (inventoryPublic === true) showInventory();
     if (walkingEnabled && !routeInitialized) {
       routeInitialized = true;
       setupPublicRoute();
     }
   } catch {
     inventoryPublic = null;
-    byId('publicationState').textContent = '지금은 매물 공개 상태를 확인할 수 없어요.';
     byId('walkingState').textContent = '도보 경로 상태 미확인';
   }
+  showAccess();
 }
 
 async function showInventory() {
   const node = byId('coverageSummary');
+  const current = new AbortController();
+  coverageRequest = current;
   node.hidden = false;
   node.textContent = '수집한 지역을 확인하고 있어요.';
   try {
-    const data = await request('/api/status?scope=coverage');
-    if (inventoryPublic !== true || data.state === 'private') { node.replaceChildren(); node.hidden = true; return; }
+    const data = await request('/api/status?scope=coverage', undefined, current.signal);
+    if (current.signal.aborted) return;
+    if (data.state === 'private') {
+      inventoryPublic = false;
+      if (signedIn) login.expire();
+      else { showAccess(); showIdleStatus(); }
+      return;
+    }
     node.textContent = searchInfo.inventorySummary(data);
-  } catch { node.textContent = '보유 지역과 매물 수를 확인할 수 없어요.'; }
+  } catch { if (!current.signal.aborted) node.textContent = '보유 지역과 매물 수를 확인할 수 없어요.'; }
 }
 
 async function setupPublicRoute() {
@@ -149,7 +175,21 @@ async function setupPublicRoute() {
   });
 }
 
-const initialStatus = readPublicationState().then(() => {
+const login = startSearchLogin(value => {
+  signedIn = value;
+  if (!value) clearSearch();
+  showAccess();
+  if (value && waitingSearch && !active) {
+    const {query, destinationId, lookupQuery} = waitingSearch;
+    waitingSearch = null;
+    if (lookupQuery && pending) destinationPicker(pending.conditions, query, revision, lookupQuery);
+    else if (confirmed && !pending) {
+      const turn = startRequest();
+      loadListings(query, turn, confirmed, destinationId).catch(error => handleFailure(error, turn)).finally(() => finishRequest(turn));
+    }
+  } else if (!active) showIdleStatus();
+}, message => { conversation.textContent = message; });
+const initialStatus = Promise.all([readPublicationState(), login.initial]).then(() => {
   if (!confirmed && !pending && !active) showIdleStatus();
 });
 
@@ -355,9 +395,14 @@ async function loadListings(query, turn, conditions, destinationId) {
   clearCards();
   await initialStatus;
   if (turn !== revision) return;
-  if (inventoryPublic === null) await readPublicationState();
+  if (!signedIn && inventoryPublic === null) await readPublicationState();
   if (turn !== revision) return;
-  if (inventoryPublic !== true) { showIdleStatus(); return; }
+  if (!canSearch()) {
+    waitingSearch = {query, destinationId};
+    showIdleStatus();
+    return;
+  }
+  waitingSearch = null;
   byId('results').dataset.state = 'loading';
   resultStatus.textContent = '조건에 맞는 매물을 찾고 있어요.';
   const data = await request('/api/search', {query, confirmedConditions:conditions, ...(destinationId ? {destinationId} : {})}, active.signal);
@@ -397,10 +442,9 @@ function handleFailure(error, turn) {
   if (turn !== revision || error.name === 'AbortError') return;
   if (error.status === 401 || error.status === 403) {
     inventoryPublic = false;
-    byId('coverageSummary').replaceChildren();
-    byId('coverageSummary').hidden = true;
-    byId('publicationState').textContent = '매물 공개 준비 중 · 조건만 미리 설정할 수 있어요.';
+    if (signedIn) { login.expire(); return; }
     clearCards();
+    showAccess();
     showIdleStatus();
   } else {
     conversation.textContent = error.message || '검색을 마치지 못했어요. 다시 시도해 주세요.';
@@ -415,6 +459,7 @@ async function submitTurn(query, fresh=false) {
   query = query.trim();
   if (!query) { input.focus(); return; }
   const turn = startRequest();
+  waitingSearch = null;
   const draftAtSubmit = input.value;
   const wasPending = !fresh && pending;
   const previous = wasPending ? pendingBase : fresh ? null : confirmed;
@@ -433,8 +478,9 @@ async function submitTurn(query, fresh=false) {
       pendingBase = previous;
       queryBeforeClarification = originalQuery;
       offerClarification(data);
-      if (data.kind === 'destination' && data.lookupQuery && !data.candidates?.length && inventoryPublic === true) {
-        destinationPicker(data.pending.conditions, originalQuery, turn, data.lookupQuery);
+      if (data.kind === 'destination' && data.lookupQuery && !data.candidates?.length) {
+        if (canSearch()) destinationPicker(data.pending.conditions, originalQuery, turn, data.lookupQuery);
+        else waitingSearch = {query:originalQuery, lookupQuery:data.lookupQuery};
       }
       input.focus({preventScroll:true});
       return;
@@ -467,7 +513,7 @@ for (const example of document.querySelectorAll('[data-query]')) {
     submitTurn(input.value, true);
   });
 }
-reset.addEventListener('click', () => {
+function clearSearch() {
   revision++;
   active?.abort();
   placeLookup?.abort();
@@ -476,6 +522,7 @@ reset.addEventListener('click', () => {
   pending = null;
   pendingBase = null;
   selectedPlace = null;
+  waitingSearch = null;
   queryBeforeClarification = '';
   input.value = '';
   input.placeholder = initialPlaceholder;
@@ -487,5 +534,8 @@ reset.addEventListener('click', () => {
   showIdleStatus();
   showBusy(false);
   reset.hidden = true;
+}
+reset.addEventListener('click', () => {
+  clearSearch();
   input.focus();
 });

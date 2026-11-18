@@ -11,6 +11,7 @@
   <link rel="preload" as="image" href="/images/neighborhood.webp">
   <link rel="stylesheet" href="/style.css">
   <script src="/search-info.js" defer></script>
+  <script src="/search-login.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -26,13 +27,30 @@
         <a href="#results">검색 결과</a>
         <a href="#guide">이용 안내</a>
       </nav>
-      <button class="theme-toggle" id="themeToggle" type="button" aria-label="화면 테마 전환">
-        <span class="theme-moon" aria-hidden="true"></span>
-        <span class="theme-sun" aria-hidden="true">☀</span>
-        <span class="theme-label">테마 전환</span>
-      </button>
+      <div class="header-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="화면 테마 전환">
+          <span class="theme-moon" aria-hidden="true"></span>
+          <span class="theme-sun" aria-hidden="true">☀</span>
+          <span class="theme-label">테마 전환</span>
+        </button>
+        <button class="account-action" id="login-button" type="button" aria-haspopup="dialog" aria-controls="login-dialog">로그인</button>
+        <button class="account-action" id="logout-button" type="button" hidden>로그아웃</button>
+      </div>
     </div>
   </header>
+  <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-title" aria-describedby="login-description">
+    <h2 id="login-title">로그인</h2>
+    <p id="login-description">로그인 키를 입력하면 저장된 매물을 검색할 수 있어요.</p>
+    <form id="login-form" method="dialog">
+      <label for="login-key">로그인 키</label>
+      <input id="login-key" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="32자리 키 입력" required autofocus aria-describedby="login-error">
+      <p class="login-error" id="login-error" role="alert"></p>
+      <div class="login-actions">
+        <button id="login-close" type="button">취소</button>
+        <button id="login-submit" type="submit">로그인</button>
+      </div>
+    </form>
+  </dialog>
   <main>
     <section class="hero" aria-labelledby="heroTitle">
       <div class="hero-picture" aria-hidden="true"><img src="/images/neighborhood.webp" alt="" fetchpriority="high"></div>

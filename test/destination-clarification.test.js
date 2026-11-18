@@ -22,6 +22,8 @@ test('location clarification can be followed by destination clarification withou
 
 test('typed POIs can use a verified address, survive a budget edit, and never verify a stale or invented ID',async()=>{
  const start=searchTurn({query:'원주시 무실동 월세 45만원, 도보 15분'});
+ const busStation=searchTurn({query:'서울역 버스환승센터',pending:start.pending});
+ assert.equal(busStation.lookupQuery,'서울역 버스환승센터');assert.equal(busStation.conditions.transportMode,'walk');
  const place=searchTurn({query:'삼성전자 수원사업장이요',pending:start.pending});
  assert.equal(place.state,'clarify');assert.equal(place.lookupQuery,'삼성전자 수원사업장');
  const name='삼성전자 수원사업장',id='osm-N-12345';

@@ -3,7 +3,7 @@ import {jobInventory,loadRegionInventory,regionalSummary} from '../lib/inventory
 import {buildConditions} from '../lib/conditions.js';
 import {analyzeSearch} from '../lib/gemini.js';
 import {recommend} from '../lib/recommend.js';
-import {getDestination,identifyDestination} from '../lib/destinations.js';
+import {curatedCampusChoices,getDestination,identifyDestination} from '../lib/destinations.js';
 import {resolveLocation} from '../lib/regions.js';
 import {walkingRoute,walkingSettings,validWalkingPoint} from '../lib/walking.js';
 import {collectionStatus} from '../lib/collection.js';
@@ -13,8 +13,11 @@ async function searchDestination(id,name,options){
   if(typeof id!=='string'||!id.trim()||id.length>180)throw new HttpError(400,'목적지 선택 값을 확인해 주세요.');
   const place=await getDestination(id,options);
   if(!place?.verified)throw new HttpError(422,'선택한 목적지 주소를 다시 확인해 주세요.');
-  if(name&&name!==place.name&&identifyDestination(name).destination?.id!==id){
-   throw new HttpError(422,'입력한 목적지와 선택한 장소가 다릅니다. 주소를 다시 확인해 주세요.');
+  if(name&&name!==place.name){
+   const identified=identifyDestination(name);
+   const matching=identified.destination?.id===id||
+    (identified.status==='ambiguous'&&curatedCampusChoices(name).some(choice=>choice.id===id));
+   if(!matching)throw new HttpError(422,'입력한 목적지와 선택한 장소가 다릅니다. 주소를 다시 확인해 주세요.');
   }
   return {destination:place,status:'resolved',explicit:true};
  }

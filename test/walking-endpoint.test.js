@@ -51,3 +51,29 @@ test('route API looks up a stored origin and trusted campus on the server',async
  assert.equal(networkCalls,1);assert.equal(data.status,'success');
  assert.equal(data.durationMinutes,16);assert.equal(data.originApproximate,true);
 });
+
+test('a stored listing missing either coordinate uses the matching Dataset origin and its accuracy',async()=>{
+ const upstream=[];
+ const data=await handleWalking(ids,{
+  req,env:{...env,ENABLE_WALKING_ROUTES:'true',APIFY_DATASET_ID:'single-route-origin-fixture',APIFY_TOKEN:'mock'},
+  store:{
+   get:async()=>({id:ids.listingId,lat:37.33,lng:null,approximate:false}),
+   command:async args=>args[1]===RESERVE_WALK?['owner']:1
+  },
+  fetcher:async(url,init)=>{
+   const host=new URL(url).hostname;
+   upstream.push(host);
+   if(host==='api.apify.com')return Response.json([
+    {id:'different',rent:30,lat:37.91,lng:127.8},
+    {id:ids.listingId,rent:45,latitude:37.331,longitude:127.923,location_is_approximate:true}
+   ]);
+   assert.equal(host,'apis.openapi.sk.com');
+   const body=JSON.parse(init.body);
+   assert.deepEqual([body.startY,body.startX],[37.331,127.923]);
+   return Response.json({features:[{type:'Feature',geometry:{type:'Point'},properties:{pointType:'SP',totalTime:360,totalDistance:400}}]});
+  }
+ });
+ assert.equal(data.durationMinutes,6);
+ assert.equal(data.originApproximate,true);
+ assert.deepEqual(upstream,['api.apify.com','apis.openapi.sk.com']);
+});

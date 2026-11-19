@@ -60,6 +60,34 @@ test('search re-ranks walking estimates with the actual user weights',async()=>{
  assert.equal(walk.data.results[0].id,'near');
 });
 
+test('a selected walking destination without a time cap calculates eligible routes within the search budget',async()=>{
+ const rooms=[room('cheap',{rent:20}),room('later',{rent:21}),room('too-expensive',{rent:60})];
+ const origin='원주시 원룸 관리비 포함 월 50만원 이하';
+ const called=[];
+ const result=await search(rooms,{
+  query:origin,
+  confirmedConditions:{location:region,roomTypes:['ONE_ROOM'],maxMonthlyTotal:50,transportMode:'walk',destination:'강원대학교 원주캠퍼스'}
+ },async (listing,destination)=>{
+  called.push([listing.id,destination.id]);
+  return tmap(listing,64);
+ },{...env,TMAP_MAX_ROUTES_PER_SEARCH:'1'});
+ assert.equal(result.status,200);
+ assert.equal(result.data.conditions.maxCommuteMinutes,null);
+ assert.deepEqual(result.data.walking,{status:'calculated',selectedCount:1,successCount:1});
+ assert.deepEqual(called,[['cheap',DEFAULT_DESTINATION_ID]]);
+ assert.deepEqual(result.data.results.map(r=>[r.id,r.commuteMinutes]),[['cheap',64]]);
+ assert.deepEqual(result.data.unverified.map(r=>[r.id,r.commuteMinutes]),[['later',null]]);
+});
+
+test('when no time cap was set, route failure reports its reason without claiming the inventory needs collecting',async()=>{
+ const result=await search([room('r')],{query:'원주시 원룸',destinationId:DEFAULT_DESTINATION_ID},
+  async()=>({status:'unconfirmed',mode:'walking',provider:'tmap',reason:'route-not-found'}));
+ assert.equal(result.data.walking.status,'unconfirmed');
+ assert.equal(result.data.unverified[0].walkingRoute.reason,'route-not-found');
+ assert.equal(result.data.unverified[0].commuteMinutes,null);
+ assert.equal(result.data.collectionNeeded,false);
+});
+
 test('skip walking when time is unrequested, transit requested, or routes disabled',async()=>{
  const rooms=[room('r')];
  let calls=0;
@@ -85,6 +113,25 @@ test('an unknown workplace or ambiguous campus asks for an address before lookin
   assert.equal(result.data.collectionNeeded,undefined);
  }
  await assert.rejects(search([],{query,destinationId:'unknown-place'},()=>assert.fail('unexpected route lookup')),{status:422});
+});
+
+test('a duration question or an ambiguous destination without a time cap requests clarification before using providers',async()=>{
+ const stop=()=>assert.fail('no model, inventory or routing calls until destination is confirmed');
+ for(const query of ['원주시 무실동 원룸 도보 시간 알려줘','원주시 무실동에서 강원대까지 얼마나 걸려?']){
+  const response=await handleSearch({query},{req,env,store:{get:stop,command:stop,reserve:stop},fetcher:stop,calculateRoute:stop});
+  assert.equal(response.status,422);assert.equal(response.data.state,'clarify');
+  assert.equal(response.data.kind,'destination');assert.equal(response.data.conditions.maxCommuteMinutes,null);
+ }
+});
+
+test('confirmed removal of a walking condition takes precedence over the original question',async()=>{
+ const result=await search([room('r')],{
+  query:'원주시에서 학교까지 도보로 얼마나 걸려?',
+  confirmedConditions:{location:region,destination:null,maxCommuteMinutes:null,maxMonthlyTotal:50}
+ },()=>assert.fail('removed route must not be calculated'));
+ assert.equal(result.status,200);
+ assert.equal(result.data.walking.status,'not-requested');
+ assert.deepEqual(result.data.results.map(item=>item.id),['r']);
 });
 
 test('a travel-time cap in Wonju or Seoul asks where to travel; no model, inventory, job or routing work starts',async()=>{

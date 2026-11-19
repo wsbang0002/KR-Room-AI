@@ -73,6 +73,23 @@ test('real empty datasets, ambiguous evidence, provider outage and bounded parti
  assert.equal(regionalSummary(redisFailed,city).state,'partial');
 });
 
+test('inventory preserves a saved listing and takes a whole Dataset origin only when the stored point is missing',async()=>{
+ const store=new FakeRedis();
+ await saveListings(store,[
+  sample('partial',city,{lat:37.34,approximate:false}),sample('complete',city,{lat:37.36,lng:127.93,approximate:false}),
+  sample('no-match',city,{lng:127.93})
+ ],city);
+ const options={env:upstreamEnv('region-origin-fixture'),store,fetcher:async()=>Response.json([
+  sample('partial',city,{rent:75,latitude:37.341,longitude:127.92,location_is_approximate:true}),
+  sample('complete',city,{lat:37.39,lng:127.97,approximate:true})
+ ])};
+ const items=(await loadRegionInventory(city,options)).items;
+ const origin=id=>{const {lat,lng,approximate,rent}=items.find(item=>item.id===id);return [lat,lng,approximate,rent];};
+ assert.deepEqual(origin('partial'),[37.341,127.92,true,40]);
+ assert.deepEqual(origin('complete'),[37.36,127.93,false,40]);
+ assert.deepEqual(origin('no-match'),[null,127.93,true,40]);
+});
+
 test('expired Apify query cache is identified as a degraded fallback when refresh fails',async()=>{
  const env=upstreamEnv('cache-failure');
  const first=await loadListings({env,now:1,fetcher:async()=>Response.json([sample('old',city)])});

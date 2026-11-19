@@ -51,3 +51,24 @@ test('every mode asks for a named destination; a default invented by the AI cann
   assert.equal(removed.state,'ready');assert.equal(removed.conditions.maxCommuteMinutes,null);
  }
 });
+
+test('walking-time follow-ups without a duration limit keep the original listing filters and verify the named destination',()=>{
+ const previous=searchTurn({query:'원주시 무실동에서 관리비 포함 월 50만 원 이하인 원룸 찾아줘'}).conditions;
+ assert.equal(previous.destination,null);
+ const ask=searchTurn({query:'학교까지 도보로 얼마나 걸려?',previous});
+ assert.equal(ask.kind,'destination');
+ assert.match(ask.question,/어디까지/);
+ assert.deepEqual(ask.conditions,previous);
+ const ambiguous=searchTurn({query:'강원대요',previous,pending:ask.pending});
+ assert.deepEqual(ambiguous.places.map(p=>p.id),['knu-wonju','knu-chuncheon']);
+ const selected=searchTurn({query:'강원대학교 원주캠퍼스',pending:ambiguous.pending});
+ assert.equal(selected.state,'ready');
+ assert.deepEqual(selected.conditions,{...previous,destination:'강원대학교 원주캠퍼스'});
+ const station=searchTurn({query:'원주역까지 걸어서 몇 분이야?',previous});
+ assert.equal(station.kind,'destination');assert.equal(station.lookupQuery,'원주역');
+ const campus=searchTurn({query:'강원대 춘천 캠퍼스까지 도보로 얼마나 걸려?',previous});
+ assert.equal(campus.state,'ready');
+ assert.deepEqual(campus.conditions,{...previous,destination:'강원대학교 춘천캠퍼스'});
+ const cancelled=searchTurn({query:'도보 시간 조건 없이',pending:ask.pending});
+ assert.equal(cancelled.state,'ready');assert.deepEqual(cancelled.conditions,previous);
+});

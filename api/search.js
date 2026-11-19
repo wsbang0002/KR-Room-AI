@@ -1,4 +1,4 @@
-import {buildConfirmedConditions,conditionFields,destinationTurn,mentionedDestination,searchTurn} from '../lib/search-turn.js';
+import {buildConfirmedConditions,conditionFields,destinationTurn,mentionedDestination,needsWalkingDestination,searchTurn} from '../lib/search-turn.js';
 import {jobInventory,loadRegionInventory,regionalSummary} from '../lib/inventory.js';
 import {buildConditions} from '../lib/conditions.js';
 import {analyzeSearch} from '../lib/gemini.js';
@@ -36,7 +36,7 @@ async function rankWithWalking(items,conditions,selection,options,{snapshot},cal
  const walking={status:'not-requested',selectedCount:0,successCount:0};
  const requireDestinationTime=conditions.transportMode==='walk'&&selection.explicit;
  const rank=()=>recommend(items,conditions,{snapshot,walkingRoutes,requireDestinationTime});
- if(conditions.transportMode!=='walk'||conditions.maxCommuteMinutes==null){
+ if(!requireDestinationTime){
   return {...rank(),walking};
  }
  if(!selection.destination?.verified){
@@ -90,8 +90,10 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
   const local=searchTurn({query:text});
   if(local.state==='clarify'&&local.kind==='region')return clarification(local,conditions.region);
  }
- const needsDestination=()=>conditions.maxCommuteMinutes!=null&&!place?.verified;
- if(needsDestination())return clarification(destinationTurn(text,conditionFields(conditions),{name:name||null}));
+ // After clarification the original sentence may still mention a walking request the user removed.
+ const needsDestination=()=>!place?.verified&&needsWalkingDestination(hasConfirmed?'':text,{...conditions,destination:name||null});
+ const askDestination=()=>clarification(destinationTurn(text,conditionFields(conditions),{name:name||null,awaitingDestination:true}));
+ if(needsDestination())return askDestination();
  // An ordinary location/price query can overlap its inventory read with AI.
  // Timing or destination language must finish clarification first.
  const initialLocation=conditions.location;
@@ -102,7 +104,7 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
   ? {ai:null,parser:'confirmed',parserReason:'confirmed-search-conditions'}
   : await analyzeSearch(text,options);
  if(parsed.ai)conditions=build(parsed.ai);
- if(needsDestination())return clarification(destinationTurn(text,conditionFields(conditions),{name:name||null}));
+ if(needsDestination())return askDestination();
  conditions.destination=place?.name||name||null;
  conditions.destinationPlace=place;
  conditions.destinationStatus=selection.status;
@@ -122,7 +124,7 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
  const coverage=regionalSummary(loaded,conditions.location);
  const ranked=await rankWithWalking(loaded.items,conditions,selection,options,
   {snapshot:false},calculateRoute);
- const pendingRoute=conditions.maxCommuteMinutes!=null&&ranked.unverified.some(item=>item.commuteMinutes==null);
+ const pendingRoute=ranked.unverified.some(item=>item.missingConditions.includes('이동시간'));
  return {status:200,data:{mode:'real',...parsed,ai:undefined,dataSource:loaded.source,coverage,conditions,count:loaded.items.length,nearCampusVerifiedCount:loaded.items.filter(x=>x.nearCampusVerified).length,...ranked,collectionNeeded:!ranked.results.length&&!pendingRoute&&['available','empty'].includes(coverage.state),notice:loaded.notice}};
 }
 export default endpoint('POST',req=>handleSearch(req.body,{req}));

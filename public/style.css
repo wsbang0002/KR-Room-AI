@@ -168,6 +168,14 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .listing-place { margin-bottom: 3px; }
 .listing-price { margin-top: 13px; font-size: 1.56rem; letter-spacing: -.05em; font-weight: 750; color: var(--ink); }
 .listing-commute { margin: 12px 0 6px; color: var(--link); font-weight: 660; font-size: .94rem; }
+.listing-walk { margin-top: 15px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; }
+.listing-walk .listing-commute { margin-top: 0; }
+.listing-walk-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.listing-walk button { max-width: 100%; min-height: 42px; border-radius: 6px; overflow-wrap: anywhere; }
+.listing-walk-actions > button:first-child { background: var(--chip); }
+.listing-walk-picker { margin-top: 10px; }
+.listing-walk-picker label { display: block; width: 100%; font-size: .88rem; }
+.listing-walk-picker input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--field-edge); border-radius: 6px; background: var(--field); color: var(--ink); }
 .listing-meta, .listing-detail { margin-top: 8px; }
 .listing-detail summary, .listing-maps summary { color: var(--link); font-size: .85rem; font-weight: 610; }
 .listing-detail p, .listing-maps { margin-top: 8px; }

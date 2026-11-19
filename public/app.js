@@ -20,6 +20,7 @@ let selectedPlace = null;
 let revision = 0;
 let active = null;
 let placeLookup = null;
+let cardLifetime = new AbortController();
 let inventoryPublic = null;
 let signedIn = false;
 let waitingSearch = null;
@@ -55,6 +56,8 @@ async function request(path, body, signal) {
 }
 
 function clearCards() {
+  cardLifetime.abort();
+  cardLifetime = new AbortController();
   byId('cards').replaceChildren();
   byId('unknownCards').replaceChildren();
   byId('unknownTitle').hidden = true;
@@ -161,14 +164,11 @@ async function setupPublicRoute() {
     feedback.textContent = 'TMAP에서 보행 경로를 확인하고 있어요.';
     try {
       const route = await request('/api/routes/walking', {publicOriginId:from.value, destinationId:to.value});
-      if (route.status === 'success' && route.provider === 'tmap' && Number.isFinite(route.distanceMeters) && Number.isFinite(route.durationMinutes)) {
+      if (measuredWalk(route)) {
         const updated = dateLabel(route.calculatedAt, true);
         feedback.textContent = `${from.text.split(' · ')[0]} → ${to.text.split(' · ')[0]} · 도보 예상 ${route.durationMinutes}분 · ${number.format(route.distanceMeters)}m · TMAP · ${updated ? updated + ' 계산 (한국시간)' : '계산 시각 미확인'}${route.cacheHit ? ' · 저장된 경로' : ''}`;
       } else {
-        const reasons = {'daily-limit':'오늘의 조회 한도에 도달했어요.', 'user-rate-limit':'요청이 많아요. 잠시 후 다시 시도해 주세요.',
-          'upstream-rate-limit':'경로 제공처의 요청 한도에 도달했어요.', disabled:'도보 경로 계산이 꺼져 있어요.',
-          'route-not-found':'이 구간의 보행 경로를 찾을 수 없어요.', timeout:'경로 응답이 지연되고 있어요.'};
-        feedback.textContent = '도보 시간 미확인. ' + (reasons[route.reason] || '이 경로를 지금 확인할 수 없어요.');
+        feedback.textContent = walkingIssue(route.reason);
       }
     } catch (error) { feedback.textContent = '도보 시간 미확인. ' + error.message; }
     finally { origin.disabled = false; destination.disabled = false; submit.disabled = false; }
@@ -311,83 +311,47 @@ function listingCard(room, conditions, unknown) {
   top.append(element('h3', 'listing-title', room.title || '매물 상세'));
   card.append(top, element('p', 'listing-price', Number.isFinite(room.total) ? `월 ${money(room.total)}` : '월 총액 미확인'));
   card.append(element('p', 'listing-breakdown', `보증금 ${money(room.deposit)} · 월세 ${money(room.rent)} · 관리비 ${money(room.fee)}`));
-  const route = room.walkingRoute;
-  const walked = route?.status === 'success' && route.provider === 'tmap' && Number.isFinite(route.durationMinutes) && Number.isFinite(route.distanceMeters);
-  if (walked) {
-    card.append(element('p', 'listing-commute', `도보 예상 ${route.durationMinutes}분 · ${number.format(route.distanceMeters)}m`));
-    card.append(element('p', 'listing-meta', ['TMAP 보행 경로', destination?.name, route.originApproximate ? '대략적 매물 위치 기준' : null, dateLabel(route.calculatedAt, true)].filter(Boolean).join(' · ')));
-  } else {
-    const mode = modes[conditions.transportMode] || '이동';
-    const time = conditions.transportMode && conditions.transportMode !== 'walk' ? mode + ' 시간 계산 미지원' :
-      Number.isFinite(room.commuteMinutes) ? `${mode} 예상 ${room.commuteMinutes}분` : `${mode} 시간 미확인`;
-    card.append(element('p', 'listing-commute', time));
-    if (room.approximate !== false) card.append(element('p', 'listing-meta', '대략적 매물 위치'));
-  }
-  if (unknown && room.missingConditions?.length) card.append(element('p', 'listing-meta', '확인할 조건 · ' + room.missingConditions.join(', ')));
+  let mappedDestinationId = destination?.id;
+  let maps = validPoint(room) ? listingMaps(room, destination) : null;
+  card.append(listingWalk(room, conditions, cardLifetime.signal, place => {
+    if (!maps || place.id === mappedDestinationId) return;
+    mappedDestinationId = place.id;
+    const replacement = listingMaps(room, place);
+    replacement.open = maps.open;
+    maps.replaceWith(replacement);
+    maps = replacement;
+  }));
+  if (unknown && room.missingConditions?.length) card.append(element('p', 'listing-meta', '검색 당시 미확인 · ' + room.missingConditions.join(', ')));
   if (room.options?.length) card.append(element('p', 'listing-meta', room.options.join(' · ')));
   card.append(element('p', 'listing-meta', searchInfo.listingRecord(room)));
-  if (validPoint(room)) card.append(listingMaps(room, destination));
+  if (maps) card.append(maps);
   const source = safeLink('원본 매물 확인 ↗', room.url, 'listing-link');
   if (source) card.append(source);
   return card;
 }
 
 function destinationPicker(c, query, turn, lookupQuery) {
-  const picker = element('form', 'destination-form');
-  const label = element('label', '', '도착할 학교나 직장의 이름');
-  const field = element('input');
-  field.maxLength = 100;
-  field.minLength = 2;
-  field.required = true;
-  field.value = lookupQuery || c.destination || '';
-  const find = element('button', 'choice-button', '목적지 찾기');
-  find.type = 'submit';
-  const message = element('p', 'muted');
-  message.setAttribute('aria-live', 'polite');
-  const matches = element('div','destination-choices');
-  label.append(field);
-  picker.append(label, find, message, matches);
-  choices.append(picker);
-  field.addEventListener('input', () => {
-    placeLookup?.abort();
-    matches.replaceChildren();
-    message.textContent = '';
-    find.disabled = false;
-  });
-  picker.addEventListener('submit', async event => {
-    event.preventDefault();
-    placeLookup?.abort();
-    const lookup = new AbortController();
-    placeLookup = lookup;
-    find.disabled = true;
-    matches.replaceChildren();
-    message.textContent = '목적지를 찾고 있어요.';
-    try {
-      const data = await request('/api/destinations', {query:field.value.trim()}, lookup.signal);
-      if (turn !== revision || lookup.signal.aborted) return;
-      const places = (data.destinations || []).filter(p => p.verified && p.id);
-      message.textContent = [places.length ? '주소를 보고 도착할 곳을 선택해 주세요.' : '좌표를 확인한 장소가 없어요. 지역과 기관명을 함께 입력해 주세요.', data.notice, data.attribution].filter(Boolean).join(' ');
-      for (const place of places) {
-        matches.append(button([place.name, place.address].filter(Boolean).join(' · '), 'choice-button', () => {
-          const next = startRequest();
-          selectedPlace = place;
-          const draft = pending?.conditions || confirmed;
-          confirmed = {...draft, destination:place.name};
-          pending = null;
-          pendingBase = null;
-          queryBeforeClarification = '';
-          choices.replaceChildren();
-          showConditions(confirmed);
-          conversation.textContent = '목적지를 ' + place.name + '로 정했어요.';
-          loadListings(query, next, confirmed, place.id).catch(error => handleFailure(error, next)).finally(() => finishRequest(next));
-        }));
-      }
-    } catch (error) {
-      if (turn === revision && !lookup.signal.aborted) message.textContent = error.message;
-    } finally {
-      if (turn === revision && !lookup.signal.aborted) find.disabled = false;
+  placeLookup?.abort();
+  placeLookup = new AbortController();
+  const picker = placeFinder({
+    labelText:'도착할 학교나 직장의 이름', submitText:'목적지 찾기',
+    initialName:lookupQuery || c.destination || '', signal:placeLookup.signal,
+    onError:error => { if (error.status === 401) handleFailure(error, turn); },
+    onSelect:place => {
+      const next = startRequest();
+      selectedPlace = place;
+      const draft = pending?.conditions || confirmed;
+      confirmed = {...draft, destination:place.name};
+      pending = null;
+      pendingBase = null;
+      queryBeforeClarification = '';
+      choices.replaceChildren();
+      showConditions(confirmed);
+      conversation.textContent = '목적지를 ' + place.name + '로 정했어요.';
+      loadListings(query, next, confirmed, place.id).catch(error => handleFailure(error, next)).finally(() => finishRequest(next));
     }
   });
+  choices.append(picker);
   if (lookupQuery) picker.requestSubmit();
 }
 

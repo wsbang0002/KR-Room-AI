@@ -6,6 +6,7 @@
   --ink: #183e31;
   --muted: #536558;
   --line: #c4ccbe;
+  --field-edge: var(--line);
   --action: #144d39;
   --on-action: #f3f6c6;
   --chip: #dde8d8;
@@ -17,17 +18,18 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #17241f;
-  --surface: #21332b;
-  --field: #182820;
-  --ink: #e7eddf;
-  --muted: #b4c5b4;
-  --line: #455d4f;
-  --action: #dae994;
-  --on-action: #213621;
-  --chip: #344b3b;
+  --bg: #101010;
+  --surface: #1b1b1b;
+  --field: #131313;
+  --ink: #f3f3f3;
+  --muted: #bcbcbc;
+  --line: #404040;
+  --field-edge: #757575;
+  --action: #eee;
+  --on-action: #141414;
+  --chip: #303030;
   --warn: #f0bc8b;
-  --focus: #ccdf8e;
+  --focus: #fff;
 }
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -49,12 +51,12 @@ h2 { margin: 0 0 20px; font-size: 22px; }
 h3 { font-size: 17px; }
 label { display: block; margin-block: 12px 6px; font-size: 14px; font-weight: 650; }
 button,input,textarea { font: inherit; }
-button { color: var(--ink); border: 1px solid var(--line); background: var(--field); border-radius: 8px; min-height: 42px; padding: 7px 14px; cursor: pointer; }
+button { color: var(--ink); border: 1px solid var(--field-edge); background: var(--field); border-radius: 8px; min-height: 42px; padding: 7px 14px; cursor: pointer; }
 button:disabled { cursor: default; opacity: .56; }
 button:enabled:hover { border-color: var(--action); }
 button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 button.primary { color: var(--on-action); background: var(--action); border-color: var(--action); font-weight: 700; }
-input, textarea { display: block; width: 100%; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 7px; padding: 12px 14px; }
+input, textarea { display: block; width: 100%; color: var(--ink); background: var(--field); border: 1px solid var(--field-edge); border-radius: 7px; padding: 12px 14px; }
 textarea { resize: vertical; }
 input::placeholder,textarea::placeholder { color: var(--muted); }
 #loginForm button { margin-block-start: 18px; width: 100%; }

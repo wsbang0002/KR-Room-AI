@@ -1,6 +1,8 @@
 (() => {
   const key = 'knuroom-theme';
   const root = document.documentElement;
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  const lightThemeColor = themeColor?.content;
   const system = window.matchMedia('(prefers-color-scheme: dark)');
   const valid = value => value === 'dark' || value === 'light';
   let choice = null;
@@ -16,7 +18,7 @@
     const theme = choice || (system.matches ? 'dark' : 'light');
     const dark = theme === 'dark';
     root.dataset.theme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#152521' : '#f1efe5');
+    if (themeColor) themeColor.content = dark ? '#101010' : lightThemeColor;
     const button = document.getElementById('themeToggle');
     if (!button) return;
     const nextLabel = dark ? '라이트 모드' : '다크 모드';

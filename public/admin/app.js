@@ -246,7 +246,7 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
    'destination-ambiguous':'같은 이름의 목적지가 있습니다. 주소를 보고 선택하세요.',
    'destination-unverified':'목적지 좌표를 확인해야 도보 시간을 계산할 수 있습니다.',
    disabled:'도보 경로 계산이 꺼져 있어 이동시간을 확인할 수 없습니다.',
-   'no-eligible-listings':'예산·방 조건과 출발 좌표를 모두 확인한 매물이 없어 경로를 조회하지 않았습니다.',
+   'no-eligible-listings':'최근 7일 자료 중 검색 조건과 출발 좌표를 모두 확인한 매물이 없어 도보 경로를 조회하지 않았습니다.',
    calculated:`도보 경로 확인 ${walking.successCount} / ${walking.selectedCount}건`,
    unconfirmed:'후보 매물의 보행 경로를 확인할 수 없습니다.'
   };

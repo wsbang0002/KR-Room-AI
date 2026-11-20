@@ -60,6 +60,39 @@ test('search re-ranks walking estimates with the actual user weights',async()=>{
  assert.equal(walk.data.results[0].id,'near');
 });
 
+test('automatic walking skips outdated and undated records and uses a fresh duplicate as a whole',async()=>{
+ const store=new FakeRedis(),old='2020-01-01T00:00:00Z';
+ await saveListings(store,[room('old',{rent:1}),room('refreshed',{rent:2})],region,{now:old});
+ const called=[];
+ const response=await handleSearch({query,destinationId:DEFAULT_DESTINATION_ID},{
+  req,store,env:{...env,APIFY_DATASET_ID:'fresh-dataset',APIFY_TOKEN:'mock',TMAP_MAX_ROUTES_PER_SEARCH:'1'},
+  fetcher:async url=>{
+   assert.equal(new URL(url).hostname,'api.apify.com');
+   return Response.json([room('undated',{rent:1}),room('refreshed',{rent:34,latitude:37.35,lastSeenAt:new Date().toISOString()})]);
+  },
+  calculateRoute:async item=>{called.push([item.id,item.rent,item.lat]);return tmap(item,14);}
+ });
+ assert.deepEqual(called,[['refreshed',34,37.35]]);
+ assert.deepEqual(response.data.results.map(item=>item.id),['refreshed']);
+ assert.ok(response.data.unverified.every(item=>item.score===null&&item.walkingRoute===null));
+ assert.deepEqual(response.data.unverified.map(item=>item.id),['old','undated']);
+ assert.equal(response.data.coverage.count,3);
+});
+
+test('outdated inventory is counted without spending a walking request or awaiting a route',async()=>{
+ const store=new FakeRedis();
+ await saveListings(store,[room('expired')],region,{now:'2020-01-01T00:00:00Z'});
+ const stop=()=>assert.fail('outdated listings should not start an upstream request');
+ const {data}=await handleSearch({query,destinationId:DEFAULT_DESTINATION_ID},{
+  req,env,store,fetcher:stop,calculateRoute:stop
+ });
+ assert.equal(data.coverage.count,1);
+ assert.equal(data.results.length,0);
+ assert.equal(data.unverified[0].score,null);
+ assert.deepEqual(data.walking,{status:'no-eligible-listings',selectedCount:0,successCount:0});
+ assert.equal(data.collectionNeeded,true);
+});
+
 test('a selected walking destination without a time cap calculates eligible routes within the search budget',async()=>{
  const rooms=[room('cheap',{rent:20}),room('later',{rent:21}),room('too-expensive',{rent:60})];
  const origin='원주시 원룸 관리비 포함 월 50만원 이하';

@@ -34,7 +34,9 @@ test('region counts are deduplicated before price filtering, separate source obs
  assert.equal(read.data.coverage.state,'available');
  assert.equal(read.data.results.length+read.data.unverified.length,0);
  const priced=await handleSearch({query:'원주시 무실동 월세 45만원'},opts);
- const room=priced.data.results[0];
+ assert.equal(priced.data.results.length,0);
+ const [room]=priced.data.unverified;
+ assert.equal(room.score,null);
  assert.equal(room.inventorySource,'redis');assert.equal(room.availabilityCheckedAt,null);
  assert.equal(room.availability,'unverified');assert.equal(room.syncStatus,'stale');
  assert.equal(priced.data.coverage.lastCollectedAt,'2026-01-02T10:00:00.000Z');

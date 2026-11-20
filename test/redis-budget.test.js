@@ -14,10 +14,10 @@ const cycle={startAt:new Date(Date.now()-86400000).toISOString(),endAt:new Date(
 const limits=(spent=0,hard=5)=>({data:{monthlyUsageCycle:cycle,limits:{maxMonthlyUsageUsd:hard},current:{monthlyUsageUsd:spent}}});
 const ok=data=>({ok:true,json:async()=>data});
 const row=(extra={})=>({id:'real-id',rent:30,deposit:300,maintenance_cost:50000,address:'서울특별시 관악구 봉천동',room_type:'원룸',metadata:{scrapedAt:'2026-11-01T00:00:00Z'},...extra});
-const mockedFetcher=({spent=0,hard=5,state='RUNNING',cost=.1,items=[row()],onStart=()=>{}}={})=>async(url,init)=>{
+const mockedFetcher=({spent=0,hard=5,state='RUNNING',cost=.1,items=[row()],onStart=()=>{},finishedAt=new Date().toISOString()}={})=>async(url,init)=>{
  if(url.endsWith('/users/me/limits'))return ok(limits(spent,hard));
  if(init?.method==='POST'){onStart();return ok({data:{id:'run123',actId:ACTOR_ID,status:'RUNNING'}});}
- if(url.includes('/actor-runs/'))return ok({data:{id:'run123',actId:ACTOR_ID,status:state,defaultDatasetId:'ds123',usageTotalUsd:cost,finishedAt:new Date().toISOString()}});
+ if(url.includes('/actor-runs/'))return ok({data:{id:'run123',actId:ACTOR_ID,status:state,defaultDatasetId:'ds123',usageTotalUsd:cost,finishedAt}});
  if(url.includes('/datasets/'))return ok(items);
  throw Error('Unexpected request');
 };
@@ -29,6 +29,21 @@ test('unseen listings are retained and marked stale',async()=>{const db=new Fake
 test('broad/narrow region searches use persistent indexes without wrong-region matches',async()=>{const db=new FakeRedis();await saveListings(db,[row()],'서울특별시 관악구');assert.equal((await storedListings(db,'서울특별시')).length,1);assert.equal((await storedListings(db,'부산광역시')).length,0);});
 test('JSON backup and restore only upsert KNU listings, keeping unrelated keys',async()=>{const db=new FakeRedis();await saveListings(db,[row()],'서울특별시 관악구',{now:'2026-11-02T00:00:00Z'});const backup=await backupListings(db);const other=new FakeRedis();other.write('other:data','untouched');assert.equal((await restoreListings(other,backup)).restored,1);assert.equal(other.read('other:data'),'untouched');assert.equal((await other.get(listingKey('real-id'))).fee,5);assert.equal(await other.command(['TTL',listingKey('real-id')]),-1);});
 test('invalid entire backup is rejected before any writes',async()=>{const db=new FakeRedis();await assert.rejects(restoreListings(db,{format:'knuroom-listings-v1',listings:[{...row(),searchRegion:'서울 관악구'},{id:'bad',searchRegion:'없는시'}]}));assert.equal(db.data.size,0);});
+test('restoring old or undated listings never marks them as observed on the backup date',async()=>{
+ const db=new FakeRedis(),region='서울특별시 관악구';
+ const collectedAt='2020-01-02T03:04:05.000Z';
+ const legacy=row({metadata:null,searchRegion:region});
+ await restoreListings(db,{format:'knuroom-listings-v1',createdAt:new Date().toISOString(),
+  listings:[{...legacy,id:'old',collectedAt},{...legacy,id:'undated'}]});
+ const stored=await storedListings(db,region);
+ const old=stored.find(item=>item.id==='old'),undated=stored.find(item=>item.id==='undated');
+ assert.equal(old.lastSeenAt,null);
+ assert.equal(old.collectedAt,collectedAt);
+ assert.equal(old.syncStatus,'stale');
+ assert.equal(undated.firstCollectedAt,null);
+ assert.equal(undated.lastSeenAt,null);
+ assert.equal(undated.syncStatus,'unknown');
+});
 for(const [spent,hard] of [[4.5,5],[4.2,5],[0,10],[0,0]])test(`account usage ${spent}, hard limit ${hard} block Actor`,async()=>{let starts=0;await assert.rejects(startCollection(c(),{req,env,store:new FakeRedis(),fetcher:mockedFetcher({spent,hard,onStart:()=>starts++})}),e=>e.status===402);assert.equal(starts,0);});
 test('bad usage response or absent billing cycle cannot execute Actor',async()=>{for(const data of [{},{data:{limits:{maxMonthlyUsageUsd:5},current:{monthlyUsageUsd:0}}}]){let calls=0;await assert.rejects(startCollection(c(),{req,env,store:new FakeRedis(),fetcher:async(url,init)=>{if(init?.method==='POST')calls++;return ok(data);}}));assert.equal(calls,0);}});
 test('monthly reservations survive workers and block another concurrent region',async()=>{const db=new FakeRedis();let starts=0;const fetcher=mockedFetcher({spent:3.5,onStart:()=>starts++});const jobs=await Promise.allSettled([startCollection(c(),{req,env,store:db,fetcher}),startCollection(c('부산 금정구'),{req,env,store:db,fetcher})]);assert.equal(starts,1);assert.equal(jobs.filter(x=>x.status==='fulfilled').length,1);assert.equal(jobs.find(x=>x.status==='rejected').reason.status,409);});
@@ -36,6 +51,41 @@ test('settlement releases only unused reservation and permits next run within co
 test('terminal Actor failure with confirmed zero cost releases reservation exactly once',async()=>{const db=new FakeRedis(),fetcher=mockedFetcher({state:'FAILED',cost:0});const job=await startCollection(c(),{req,env,store:db,fetcher});const stored=await db.get(`knuroom:collect:${job.jobId}`);await collectionStatus(job.jobId,{req,env,store:db,fetcher});await collectionStatus(job.jobId,{req,env,store:db,fetcher});assert.equal(Number(db.read(stored.reservation.ledger)),0);assert.equal(db.read('knuroom:apify:active'),undefined);});
 test('unknown final charge or oversized charge retains active lock',async()=>{for(const cost of [null,1]){const db=new FakeRedis(),fetcher=mockedFetcher({state:'SUCCEEDED',cost});const job=await startCollection(c(),{req,env,store:db,fetcher});try{await collectionStatus(job.jobId,{req,env,store:db,fetcher});}catch(e){assert.equal(e.status,402);}assert.ok(db.read('knuroom:apify:active'));await assert.rejects(startCollection(c('부산 금정구'),{req,env,store:db,fetcher}),e=>e.status===409);}});
 test('lost Actor start response stays locked beyond ordinary cache expiry',async()=>{const db=new FakeRedis();await assert.rejects(startCollection(c(),{req,env,store:db,fetcher:async(url,init)=>{if(init?.method==='POST')throw Error('lost response');return ok(limits());}}));db.now+=7200000;assert.ok(db.read('knuroom:apify:active'));await assert.rejects(startCollection(c('부산 금정구'),{req,env,store:db,fetcher:mockedFetcher()}),e=>e.status===409);});
-test('completed Dataset is persisted and redis search works when collection budget exhausted',async()=>{const db=new FakeRedis(),fetcher=mockedFetcher({state:'SUCCEEDED'});const job=await startCollection(c(),{req,env,store:db,fetcher});await collectionStatus(job.jobId,{req,env,store:db,fetcher,includeItems:true});assert.ok(await db.get(listingKey('real-id')));let calls=0;const search=await handleSearch({query:'서울 관악구 원룸'},{req,env:{...env,ENABLE_LIVE_COLLECTION:'false'},store:db,fetcher:async()=>{calls++;throw Error('offline');}});assert.equal(search.data.dataSource,'redis');assert.equal(search.data.results.length,1);assert.equal(calls,0);});
+test('completed Dataset is persisted and redis search works when collection budget exhausted',async()=>{const db=new FakeRedis(),fetcher=mockedFetcher({state:'SUCCEEDED',items:[row({metadata:null})]});const job=await startCollection(c(),{req,env,store:db,fetcher});await collectionStatus(job.jobId,{req,env,store:db,fetcher,includeItems:true});assert.ok(await db.get(listingKey('real-id')));let calls=0;const search=await handleSearch({query:'서울 관악구 원룸'},{req,env:{...env,ENABLE_LIVE_COLLECTION:'false'},store:db,fetcher:async()=>{calls++;throw Error('offline');}});assert.equal(search.data.dataSource,'redis');assert.equal(search.data.results.length,1);assert.equal(calls,0);});
+test('job results, cached job items, and Redis use source dates rather than the poll time',async()=>{
+ const runDate=new Date().toISOString(),collectionDate='2020-04-05T06:00:00.000Z',sourceSeenAt='2020-04-07T01:02:03.000Z';
+ for(const finishedAt of [runDate,null]){
+  const db=new FakeRedis();
+  const items=[
+   row({id:'known',metadata:{scrapedAt:collectionDate}}),
+   row({id:'undated',metadata:null}),
+   row({id:'observed',lastSeenAt:sourceSeenAt,metadata:null})
+  ];
+  const fetcher=mockedFetcher({state:'SUCCEEDED',items,finishedAt});
+  const job=await startCollection(c(),{req,env,store:db,fetcher});
+  const initial=await collectionStatus(job.jobId,{req,env,store:db,fetcher,includeItems:true});
+  // Older cached job entries can be missing the inferred run timestamp.
+  const key=`knuroom:collect:${job.jobId}`,savedJob=await db.get(key);
+  for(const item of savedJob.items){
+   delete item.syncStatus;
+   if(item.id==='undated')delete item.lastSeenAt;
+  }
+  await db.set(key,savedJob);
+  const cached=await collectionStatus(job.jobId,{req,env,store:db,includeItems:true,
+   fetcher:()=>assert.fail('a cached completed job must not call the Actor or Dataset')});
+  for(const rows of [initial.items,cached.items,await storedListings(db,'서울특별시 관악구')]){
+   const known=rows.find(item=>item.id==='known'),undated=rows.find(item=>item.id==='undated');
+   assert.equal(known.lastSeenAt,null);
+   assert.equal(known.collectedAt,collectionDate);
+   assert.equal(known.syncStatus,'stale');
+   assert.equal(undated.lastSeenAt,finishedAt);
+   assert.equal(undated.collectedAt,null);
+   assert.equal(undated.syncStatus,finishedAt?'current':'unknown');
+   const observed=rows.find(item=>item.id==='observed');
+   assert.equal(observed.lastSeenAt,sourceSeenAt);
+   assert.equal(observed.syncStatus,'stale');
+  }
+ }
+});
 test('every KNU-created key uses knuroom prefix and no destructive command exists',async()=>{const db=new FakeRedis();await saveListings(db,[row()],'서울특별시 관악구');await startCollection(c(),{req,env,store:db,fetcher:mockedFetcher()});assert.ok([...db.data.keys()].every(k=>k.startsWith('knuroom:')));assert.ok(!db.calls.some(a=>['FLUSHDB','FLUSHALL','KEYS'].includes(a[0])));});
 test('unsafe policy environment settings fail closed',async()=>{for(const extra of [{APIFY_MONTHLY_BUDGET_USD:'10'},{APIFY_SOFT_STOP_USD:'5'},{APIFY_SOFT_STOP_USD:'oops'}])assert.equal((await checkApifyBudget({env:{...env,...extra},fetcher:async()=>ok(limits())})).allowed,false);});

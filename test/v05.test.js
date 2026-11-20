@@ -19,7 +19,7 @@ function memoryStore(){return new FakeRedis();}
 async function startCollection(conditions,options){const fetcher=options.fetcher;return rawStartCollection(conditions,{...options,fetcher:async(url,init)=>url.endsWith('/users/me/limits')?ok({data:{limits:{maxMonthlyUsageUsd:5},current:{monthlyUsageUsd:0},monthlyUsageCycle:{startAt:new Date(Date.now()-86400000).toISOString(),endAt:new Date(Date.now()+86400000*30).toISOString()}}}):fetcher(url,init)});}
 const ok=data=>({ok:true,json:async()=>data});
 const run=(status='RUNNING')=>({id:'run1',actId:ACTOR_ID,status,defaultDatasetId:'dataset1',usageTotalUsd:0.1});
-const room=extra=>({id:'r1',rent:30,deposit:300,fee:5,address:'서울특별시 관악구 봉천동',options:['에어컨'],roomType:'ONE_ROOM',approximate:false,...extra});
+const room=extra=>({id:'r1',collectedAt:new Date().toISOString(),rent:30,deposit:300,fee:5,address:'서울특별시 관악구 봉천동',options:['에어컨'],roomType:'ONE_ROOM',approximate:false,...extra});
 test('17 provinces and nationwide locality catalog',()=>{assert.equal(regions.filter(x=>!x.includes(' ')).length,17);for(const x of ['서울 관악구','부산 금정구','대전 유성구','제주 제주시','강원 원주시 흥업면','경북 울릉군'])assert.equal(resolveLocation(x).status,'resolved');});
 test('homonymous places require a choice; fictional locations rejected',()=>{assert.equal(resolveLocation('중구').status,'ambiguous');assert.equal(resolveLocation('없는시 없는동').status,'unsupported');assert.equal(extractRegion('서울 관악구에서 월세 50만원').location,'서울특별시 관악구');assert.equal(extractRegion('중구에서 원룸').status,'ambiguous');});
 test('destination locality and default are explicit',()=>{assert.equal(extractRegion('부산대학교 주변 원룸').location,'부산광역시 금정구');assert.equal(extractRegion('월세 40만원').isDefault,true);assert.equal(extractRegion('가짜대학교 근처').status,'unsupported');});

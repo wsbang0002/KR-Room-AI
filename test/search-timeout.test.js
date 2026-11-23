@@ -30,9 +30,37 @@ test('search aborts Gemini at the search cap and returns local conditions, while
   assert.equal(result.data.parserReason, 'upstream-timeout');
   assert.equal(result.data.conditions.location, '강원특별자치도 원주시');
   assert.equal(result.data.conditions.maxRent, 60);
-  assert.deepEqual(deadlines, [5000]);
+  assert.deepEqual(deadlines, [15000]);
 
   const check = await checkIntegrations({service: 'gemini'}, options);
   assert.equal(check.gemini.reason, 'upstream-timeout');
-  assert.deepEqual(deadlines, [5000, 35000]);
+  assert.deepEqual(deadlines, [15000, 35000]);
+});
+
+test('signed-in search accepts a Gemini response after the previous five-second deadline', async () => {
+  const {handleConditions} = await import('../api/conditions.js');
+  const {issueSearchSession} = await import('../lib/search-session.js');
+  const env = {
+    ADMIN_API_KEY: 'mock-admin-key-for-local-tests-only',
+    GEMINI_API_KEY: 'mock', GEMINI_MODEL: 'gemini-3.8-flash', AI_PROVIDER: 'gemini'
+  };
+  const session = issueSearchSession(env);
+  const req = {headers: {cookie: session.cookie.split(';')[0]}};
+  let calls = 0;
+  const store = new FakeRedis();
+  const fetcher = async (url, {signal}) => {
+    calls++;
+    await new Promise(resolve => setTimeout(resolve, 5100));
+    signal.throwIfAborted();
+    return Response.json({candidates: [{finishReason:'STOP', content: {parts: [
+      {text:'{"location":"원주시 무실동","maxMonthlyTotal":45}'}
+    ]}}]});
+  };
+  const body = {query:'원주시 무실동 원룸 관리비 포함 월 45만원'};
+  for (let i = 0; i < 2; i++) {
+    const result = await handleConditions(body,{env,req,store,fetcher});
+    assert.equal(result.interpretation.mode,'ai');
+    assert.equal(result.conditions.maxMonthlyTotal,45);
+  }
+  assert.equal(calls,1);
 });

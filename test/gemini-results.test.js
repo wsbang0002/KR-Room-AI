@@ -72,3 +72,13 @@ test('admin generation check verifies the model extracted the requested district
   assert.equal(valid.gemini.status, 'verified');
   assert.equal(valid.gemini.parser, 'gemini');
 });
+
+test('a Redis 503 at reservation is identified before a provider call', async () => {
+  const options = optionsFor({});
+  options.store.reserve = async () => {throw Object.assign(Error('offline'), {upstreamStatus:503});};
+  let generated = false;
+  options.fetcher = async () => {generated = true;};
+  const result = await analyze('원주시 무실동 원룸',options);
+  assert.equal(result.parserReason,'reservation-unavailable');
+  assert.equal(generated,false);
+});

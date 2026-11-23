@@ -15,7 +15,24 @@ const searchInfo = (() => {
   }
   function interpretation(info) {
     if (!info) return '';
-    const mode = {ai:'AI로 조건을 해석했어요.', fallback:'AI 분석을 사용할 수 없어 기본 해석을 적용했어요.', local:'기본 해석으로 조건을 확인했어요.'};
+    const reasons = {
+      timeout:'AI 응답이 늦어',
+      capacity:'AI 모델에 요청이 몰려',
+      'service-unavailable':'AI 서비스가 일시적으로 응답할 수 없어',
+      'daily-limit':'오늘의 AI 분석 횟수를 모두 사용해',
+      'provider-limit':'AI 제공자의 호출 한도에 도달해',
+      'usage-check':'AI 호출 가능 횟수를 확인할 수 없어',
+      configuration:'AI 연결 설정을 확인해야 해서',
+      access:'AI 서비스 접근 권한을 확인할 수 없어',
+      session:'로그인 상태를 확인할 수 없어',
+      'request-rejected':'AI 제공자가 분석 요청을 거절해',
+      'provider-resource':'설정된 모델이나 API 경로를 찾을 수 없어',
+      'response-blocked':'AI 제공자가 응답 생성을 제한해',
+      pending:'같은 조건의 AI 분석이 진행 중이어서',
+      'response-format':'AI 응답에서 검색 조건을 읽을 수 없어'
+    };
+    const fallback = (reasons[info.reason] || 'AI 분석을 마치지 못해') + ' 기본 해석을 적용했어요.';
+    const mode = {ai:'AI로 조건을 해석했어요.', fallback, local:'기본 해석으로 조건을 확인했어요.'};
     const unsupported = info.unsupported?.length ? '필터에 반영되지 않은 조건 · ' + info.unsupported.join(', ') : '';
     return [mode[info.mode],unsupported].filter(Boolean).join(' ');
   }

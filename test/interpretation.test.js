@@ -42,9 +42,9 @@ test('AI, local and fallback results report their actual interpreter and sunligh
  assert.deepEqual(success.interpretation,{mode:'ai',unsupported:['채광','소음']});
  assert.deepEqual(success.conditions.preferredOptions,[]);
  assert.deepEqual(buildConditions(input.query,ai).requiredOptions,[]);
- for(const analyze of [async()=>({ai:null,parserReason:'daily-rate-limit'}),async()=>{throw Error('unavailable');}]){
+ for(const [analyze,reason] of [[async()=>({ai:null,parserReason:'daily-rate-limit'}),'daily-limit'],[async()=>{throw Error('unavailable');},'unavailable']]){
   const result=await handleConditions(input,{env,analyze});
-  assert.deepEqual(result.interpretation,{mode:'fallback',unsupported:['채광','소음']});
+  assert.deepEqual(result.interpretation,{mode:'fallback',unsupported:['채광','소음'],reason});
  }
  const prepared=await handleConditions(input,{env:{...env,DATA_RIGHTS_REVIEWED:'false'},analyze:()=>assert.fail()});
  assert.equal(prepared.interpretation.mode,'local');
@@ -57,4 +57,22 @@ test('unsupported conditions are replayed through the ambiguity question and cle
  assert.equal(answer.state,'ready');assert.deepEqual(answer.interpretation.unsupported,['채광','소음']);
  const restart=await handleConditions({query:'새 검색 원주시 무실동',pending:first.pending},local);
  assert.deepEqual(restart.interpretation.unsupported,[]);
+});
+
+test('authenticated Gemini searches disclose only the classified fallback cause and keep local filters',async()=>{
+ const apiKey='unit-test-only-admin-key-with-32-characters';
+ const req={headers:{authorization:'Bearer '+apiKey}};
+ const options={req,env:{AI_PROVIDER:'gemini',ADMIN_API_KEY:apiKey}};
+ for(const [parserReason,detail,reason] of [
+  ['upstream-http-503','model-capacity','capacity'],['upstream-http-503','unspecified','service-unavailable'],
+  ['upstream-timeout',null,'timeout'],['upstream-http-429',null,'provider-limit'],
+  ['invalid-schema',null,'response-format'],['reservation-unavailable',null,'usage-check'],
+  ['unrecognized private error','private detail','unavailable']
+ ]){
+  const result=await handleConditions({query:area+'월세 40만원'},{
+   ...options,analyze:async()=>({ai:null,parserReason,timings:{google:{providerReason:detail}}})
+  });
+  assert.deepEqual(result.interpretation,{mode:'fallback',unsupported:[],reason});
+  assert.equal(result.conditions.maxRent,40);
+ }
 });

@@ -238,3 +238,102 @@ test('one staged check requires explicit free-plan confirmation and admin auth; 
  assert.equal(calls,1);
  assert.equal(await walkingUsage(opts.store),1);
 });
+
+const carSummary=(totalDistance,totalTime)=>({features:[
+ {type:'Feature',properties:{totalDistance,totalTime}},
+ {type:'Feature',properties:{distance:100,time:30}}
+]});
+const busSummary=(...itineraries)=>({metaData:{plan:{itineraries}}});
+
+test('a listing card uses the requested provider API, coordinates and units independently for each mode',async()=>{
+ const {handleWalking}=await import('../api/routes/walking.js');
+ const {getDestination,DEFAULT_DESTINATION_ID}=await import('../lib/destinations.js');
+ const endpointCalls=[];
+ const options=fixture(async(url,init)=>{
+  const {pathname,hostname}=new URL(url);
+  const body=JSON.parse(init.body);
+  const campus=await getDestination(DEFAULT_DESTINATION_ID);
+  assert.equal(hostname,'apis.openapi.sk.com');
+  assert.equal(init.method,'POST');
+  assert.deepEqual([body.startX,body.startY,body.endX,body.endY].map(Number),[room.lng,room.lat,campus.lng,campus.lat]);
+  endpointCalls.push(pathname);
+  if(pathname==='/transit/routes/sub'){
+   assert.equal(init.headers.appKey,'mock-transit-key');
+   assert.equal(typeof body.startX,'string');assert.equal(body.count,10);
+   return Response.json(busSummary(
+    {pathType:1,totalTime:181,totalDistance:990},{pathType:3,totalTime:201,totalDistance:1200},
+    {pathType:2,totalTime:3900,totalDistance:5200},{pathType:2,totalTime:721,totalDistance:3500}
+   ));
+  }
+  assert.equal(init.headers.appKey,'mock-tmap');
+  if(pathname==='/tmap/routes'){
+   assert.equal(new URL(url).searchParams.get('version'),'1');
+   assert.equal(body.totalValue,2);assert.equal(body.reqCoordType,'WGS84GEO');
+  }
+  return Response.json(pathname==='/tmap/routes'?carSummary(2670,361):summary(830,661));
+ });
+ options.env.TMAP_TRANSIT_APP_KEY='mock-transit-key';
+ options.env.TMAP_ROUTE_CACHE_ALLOWED='true';
+ await options.store.set('knuroom:listing:'+room.id,room);
+ const ids={listingId:room.id,destinationId:DEFAULT_DESTINATION_ID};
+ const walk=await handleWalking(ids,options);
+ const car=await handleWalking({...ids,mode:'car'},options);
+ const bus=await handleWalking({...ids,mode:'bus'},options);
+ assert.deepEqual([walk,car,bus].map(r=>[r.status,r.mode,r.distanceMeters,r.durationSeconds,r.durationMinutes]),
+  [['success','walking',830,661,12],['success','car',2670,361,7],['success','bus',3500,721,13]]);
+ for(const route of [car,bus]){
+  assert.equal(route.listingId,room.id);assert.equal(route.destinationId,DEFAULT_DESTINATION_ID);
+  assert.equal(route.cacheHit,false);assert.equal(route.originApproximate,true);
+ }
+ assert.equal((await handleWalking(ids,options)).cacheHit,true);
+ assert.deepEqual(endpointCalls,['/tmap/routes/pedestrian','/tmap/routes','/transit/routes/sub']);
+ const savedRoutes=[...options.store.data.values()].filter(value=>typeof value==='string'&&value.includes('"durationSeconds"')).map(value=>JSON.parse(value));
+ assert.deepEqual(savedRoutes.map(route=>route.mode),['walking']);
+});
+
+test('bus cannot reuse the road allowance; bus and car reserve in Redis before routing',async()=>{
+ let calls=0;
+ const options=fixture(async url=>{
+  calls++;
+  if(new URL(url).pathname.startsWith('/transit/'))return Response.json(busSummary({pathType:2,totalDistance:4000,totalTime:1500}));
+  return Response.json(summary());
+ });
+ Object.assign(options.env,{TMAP_TRANSIT_APP_KEY:'mock-transit',TMAP_DAILY_APP_LIMIT:'1',TMAP_TRANSIT_DAILY_APP_LIMIT:'1500'});
+ const request=(mode,id,extra={})=>walkingRoute({...room,id},dest,{...options,mode,...extra});
+ assert.equal((await request('car','c0')).status,'success');
+ assert.equal((await walkingRoute(room,dest,options)).reason,'daily-limit');
+ for(let i=0;i<10;i++)assert.equal((await request('bus','b'+i)).status,'success');
+ assert.equal((await request('bus','b10')).reason,'daily-limit');
+ assert.equal(await walkingUsage(options.store,options.now()),1);
+ for(const mode of ['car','bus']){
+  const failed=await request(mode,'no-redis',{store:{command:async()=>{throw Error('Redis unavailable');}}});
+  assert.equal(failed.reason,'redis-unavailable');
+ }
+ assert.equal(calls,11);
+});
+
+test('car and bus estimates require numeric route totals and a matching itinerary',async()=>{
+ for(const [mode,response] of [
+  ['car',{features:[]}],['car',{features:[{properties:{time:120,distance:100}}]}],
+  ['car',carSummary(500,'120')],['car',carSummary(0,0)],
+  ['bus',busSummary()],['bus',busSummary({pathType:3,totalTime:100,totalDistance:400})],
+  ['bus',busSummary({pathType:2,totalTime:90})],['bus',busSummary({pathType:2,totalTime:-1,totalDistance:500})],
+  ['bus',busSummary({pathType:2,totalTime:0,totalDistance:0})]
+ ]){
+  const options=fixture(async()=>Response.json(response));
+  options.env.TMAP_TRANSIT_APP_KEY='mock-transit';
+  const route=await walkingRoute(room,dest,{...options,mode});
+  assert.equal(route.status,'unconfirmed');assert.equal(route.mode,mode);
+  assert.equal(route.durationMinutes,undefined);assert.equal(route.distanceMeters,undefined);
+ }
+});
+
+test('bus no-service codes from successful and unsuccessful HTTP responses never produce an estimated time',async()=>{
+ for(const httpStatus of [200,400]){
+  const options=fixture(async()=>Response.json({result:{status:14,message:'검색 결과가 없음'}},{status:httpStatus}));
+  options.env.TMAP_TRANSIT_APP_KEY='mock-transit';
+  const result=await walkingRoute(room,dest,{...options,mode:'bus'});
+  assert.equal(result.reason,'route-not-found');
+  assert.equal(result.durationMinutes,undefined);
+ }
+});

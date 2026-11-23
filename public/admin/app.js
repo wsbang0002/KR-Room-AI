@@ -191,7 +191,7 @@ function walkDetails(el,room,destination,mode){
   return;
  }
  const modeLabel={transit:'대중교통',car:'자동차'}[mode];
- const time=modeLabel?modeLabel+' 시간 계산 미지원':room.commuteMinutes==null?'도보 시간 미확인':`도보 예상 ${room.commuteMinutes}분`;
+ const time=modeLabel?modeLabel+' 시간은 방 찾기의 매물 카드에서 확인하세요.':room.commuteMinutes==null?'도보 시간 미확인':`도보 예상 ${room.commuteMinutes}분`;
  const reason=route?.reason?routeReason(route.reason):'';
  el.append(make('p','metadata',[time,reason,room.approximate?'대략적 매물 위치':'위치 정확도 확인 필요'].filter(Boolean).join(' · ')));
 }
@@ -350,7 +350,7 @@ $('checkConnections').onclick=async()=>{
  const routeState=v=>[
   'TMAP 도보 경로',
   v.keyConfigured?'키 등록':'키 미등록',v.enabled?'계산 활성':'계산 비활성',
-  `오늘 ${v.usedToday??'미확인'} / ${v.dailyLimit}회`,`검색당 최대 ${v.maxPerSearch}건`,
+  `도보·자동차 합계 오늘 ${v.usedToday??'미확인'} / ${v.dailyLimit}회`,`검색당 최대 ${v.maxPerSearch}건`,
   v.cacheAllowed?'캐시 허용':'캐시 비활성',v.diagnosticEnabled?'관리자 경로 검사 활성':v.keyConfigured&&v.oneShotAllowed===true?'관리자 확인 후 경로 1건 검사 가능':'관리자 경로 검사 잠금',v.message
  ].filter(Boolean).join(' · ');
  const renderChecks=data=>Object.entries(data).filter(([,v])=>v&&typeof v==='object'&&v.status).map(([name,v])=>name==='route'&&v.dailyLimit!=null?routeState(v):`${name}: ${statuses[v.status]||v.status}${v.variables?' — '+v.variables.join(', '):''}${v.message?' — '+v.message:''}${v.model?' / 모델 '+v.model:''}${v.reason?' / '+v.reason:''}${v.spentUsd!=null?' (사용 $'+v.spentUsd+' / 한도 $'+v.hardLimitUsd+')':''}`).join('\n');

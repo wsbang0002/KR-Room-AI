@@ -77,3 +77,18 @@ test('a stored listing missing either coordinate uses the matching Dataset origi
  assert.equal(data.originApproximate,true);
  assert.deepEqual(upstream,['api.apify.com','apis.openapi.sk.com']);
 });
+
+test('listing car and bus lookups require listing access, reject coordinate overrides, and cannot use public or diagnostic routing',async()=>{
+ const options={req,env:{...env,ENABLE_WALKING_ROUTES:'true',TMAP_TRANSIT_APP_KEY:'mock'},fetcher:unexpected};
+ for(const mode of ['car','bus']){
+  await assert.rejects(handleWalking({...ids,mode},{...options,req:{headers:{}}}),{status:401});
+  await assert.rejects(handleWalking({...ids,mode,startX:127},options),{status:400});
+  await assert.rejects(handleWalking({publicOriginId:'station-wonju',destinationId:ids.destinationId,mode},options),{status:400});
+  await assert.rejects(handleWalking({...ids,mode,diagnostic:true,confirmFreePlan:true},options),{status:400});
+ }
+ await assert.rejects(handleWalking({...ids,mode:'unknown'},options),{status:400});
+ const missingKey=await handleWalking({...ids,mode:'bus'},{...options,env:{...options.env,TMAP_TRANSIT_APP_KEY:''}});
+ assert.equal(missingKey.status,'unconfirmed');assert.equal(missingKey.reason,'disabled');
+ const disabled=await handleWalking({...ids,mode:'car'},{...options,env:{...options.env,ENABLE_WALKING_ROUTES:'false'}});
+ assert.equal(disabled.reason,'disabled');
+});

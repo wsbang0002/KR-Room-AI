@@ -38,7 +38,7 @@ const searchInfo = (() => {
   }
   function mobility(c,walkingEnabled) {
     if (c?.maxCommuteMinutes == null) return '';
-    if (c.transportMode === 'car' || c.transportMode === 'transit') return `${modes[c.transportMode]} 이동시간 계산은 아직 지원하지 않아요. 이 시간 조건을 충족한 것으로 표시하지 않아요.`;
+    if (c.transportMode === 'car' || c.transportMode === 'transit') return `${modes[c.transportMode]} 시간은 검색 시 일괄 조회하지 않아요. 방 찾기의 매물 카드에서 조회 가능한 경로를 확인해 주세요.`;
     return walkingEnabled === false ? '현재 도보 시간 계산이 꺼져 있어요.' : '';
   }
   function inventoryRow(row) {

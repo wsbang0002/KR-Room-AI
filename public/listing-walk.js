@@ -1,4 +1,4 @@
-function measuredWalk(route) {
+function measuredRoute(route) {
   return route?.status === 'success' && route.provider === 'tmap' &&
     Number.isFinite(route.durationMinutes) && Number.isFinite(route.distanceMeters);
 }
@@ -81,103 +81,177 @@ function placeFinder({labelText, submitText, initialName = '', signal, onSelect,
   return form;
 }
 
+const listingModeNames = {walking:'도보', bus:'버스', car:'자동차'};
+
+function listingRouteIssue(mode, reason) {
+  if (mode === 'walking') return walkingIssue(reason);
+  const name = listingModeNames[mode];
+  switch (reason) {
+    case 'disabled':
+    case 'missing-key':
+    case 'authentication': return name + ' 경로를 현재 조회할 수 없어요.';
+    case 'operating-hours':
+    case 'no-service': return '현재 운행하는 버스 경로가 없어요.';
+    case 'unverified-destination': return '도착지 위치를 확인할 수 없어요.';
+    case 'route-not-found':
+    case 'no-bus-route': return name + ' 경로를 찾지 못했어요.';
+    case 'daily-limit': return '오늘의 조회 한도에 도달했어요.';
+    case 'redis-unavailable': return '조회 가능 횟수를 확인할 수 없어요.';
+    case 'timeout': return name + ' 경로 응답이 늦어지고 있어요.';
+    case 'upstream-rate-limit':
+    case 'user-rate-limit':
+    case 'concurrent-limit':
+    case 'pending':
+    case 'cooldown': return '잠시 후 다시 조회해 주세요.';
+    default: return name + ' 시간을 확인하지 못했어요.';
+  }
+}
+
 function listingWalk(room, conditions, signal, onDestination) {
   const panel = element('div', 'listing-walk');
-  const summary = element('p', 'listing-commute');
-  const meta = element('p', 'listing-meta');
-  summary.setAttribute('aria-live', 'polite');
-  const origin = room.approximate !== false ? '대략적 매물 위치 기준' : '매물 위치 기준';
-  meta.textContent = origin;
+  const title = element('p', 'listing-commute');
+  const origin = room.approximate === false ? '매물 위치 기준' : '대략적 매물 위치 기준';
+  const details = element('div', 'listing-travel-times');
+  details.setAttribute('aria-live', 'polite');
   const actions = element('div', 'listing-walk-actions');
-  panel.append(summary, meta, actions);
-
-  if (conditions.transportMode && conditions.transportMode !== 'walk') {
-    summary.textContent = modes[conditions.transportMode] + ' 시간 계산 미지원';
+  panel.append(title, element('p', 'listing-meta', origin), details, actions);
+  if (!room.id || !validPoint(room)) {
+    title.textContent = '매물 좌표가 없어 이동 시간을 확인할 수 없어요.';
     return panel;
   }
+
   const searchPlace = conditions.destinationPlace?.verified ? conditions.destinationPlace : null;
+  const inWonju = /원주시(?:\s|$)/.test(room.observedRegion || room.region || conditions.location || '');
   let place = searchPlace;
-  let route = room.walkingRoute;
-  let busy = false;
+  let routes = searchPlace ? {walking:room.walkingRoute} : {};
+  let current;
+  let busyMode;
   let picker;
-  function render() {
-    actions.replaceChildren();
-    meta.textContent = [place?.name, origin].filter(Boolean).join(' · ');
-    const measured = place && measuredWalk(route);
-    if (measured) {
-      summary.textContent = '도보 예상 ' + route.durationMinutes + '분 · ' + number.format(route.distanceMeters) + 'm';
-      const limit = conditions.maxCommuteMinutes;
-      const timeCondition = place.id === searchPlace?.id && Number.isFinite(limit)
-        ? '검색 조건 ' + limit + '분 ' + (route.durationMinutes > limit ? '초과' : '이내') : null;
-      meta.textContent = [place.name, 'TMAP 보행 경로', origin, timeCondition, dateLabel(route.calculatedAt, true)].filter(Boolean).join(' · ');
-    } else if (!room.id || !validPoint(room)) {
-      summary.textContent = walkingIssue('invalid-origin');
-      return;
-    } else if (walkingEnabled === false) {
-      summary.textContent = walkingIssue('disabled');
-      return;
-    } else if (route?.reason) {
-      summary.textContent = walkingIssue(route.reason);
-    } else {
-      summary.textContent = place ? '이 매물에서 목적지까지 도보 시간을 확인하세요.' : '목적지를 선택하면 도보 시간을 확인할 수 있어요.';
-    }
-    if (!measured && place) {
-      actions.append(button(place.name + '까지 도보', 'choice-button', () => calculate(place)));
-    }
-    if (searchPlace || walkingEnabled === false) return;
-    if (!place && /원주시(?:\s|$)/.test([room.observedRegion, room.region, conditions.location].filter(Boolean).join(' '))) {
-      actions.append(button('강원대 원주캠퍼스까지 도보', 'choice-button', () => calculate(null)));
-    }
-    const choose = button(place ? '다른 목적지 찾기' : '목적지 찾기', 'choice-button', () => {
-      if (!picker) {
-        picker = placeFinder({labelText:'도착할 장소', submitText:'장소 검색', signal, onSelect:calculate, onError:authFailure});
-        picker.classList.add('listing-walk-picker');
-        panel.append(picker);
-      }
-      picker.hidden = false;
-      choose.setAttribute('aria-expanded', 'true');
-      picker.querySelector('input').focus();
-    });
-    choose.setAttribute('aria-expanded', String(Boolean(picker && !picker.hidden)));
-    actions.append(choose);
+  signal.addEventListener('abort', () => current?.abort(), {once:true});
+
+  function enabled(mode) {
+    if (mode === 'walking') return walkingEnabled === true;
+    const config = listingRoutes[mode];
+    return config?.enabled === true && config.keyConfigured === true;
   }
 
   function authFailure(error) {
     if (error.status === 401 && !signal.aborted) handleFailure(error, revision);
   }
 
-  async function calculate(target) {
-    if (busy || signal.aborted) return;
-    if (target && target.id === place?.id && measuredWalk(route)) {
-      if (picker) picker.hidden = true;
-      render();
-      return;
-    }
-    busy = true;
-    for (const item of actions.children) item.disabled = true;
+  function choosePlace(target) {
+    if (target.id !== place?.id) routes = {};
+    place = target;
+    onDestination(place);
     if (picker) picker.hidden = true;
-    summary.textContent = 'TMAP 도보 경로를 확인하고 있어요.';
-    try {
-      if (!target) {
-        const data = await request('/api/destinations', {query:'강원대학교 원주캠퍼스'}, signal);
-        if (signal.aborted) return;
-        target = data.destinations?.find(item => item.id === 'knu-wonju' && item.verified && validPoint(item));
-        if (!target) throw Error('원주캠퍼스의 위치를 확인할 수 없어요.');
+    render();
+  }
+
+  function render() {
+    const name = place?.name || (inWonju ? '강원대학교 원주캠퍼스' : null);
+    title.textContent = name ? name + '까지' : '목적지까지 이동 시간';
+    details.replaceChildren();
+    for (const [mode,label] of Object.entries(listingModeNames)) {
+      const row = element('div', 'listing-travel-row');
+      row.append(element('strong', '', label));
+      const route = routes[mode];
+      const measured = place && route?.mode === mode && route.listingId === room.id &&
+        route.destinationId === place.id && measuredRoute(route);
+      if (measured) {
+        const result = element('div', 'listing-travel-result');
+        result.append(element('span', '', '예상 ' + route.durationMinutes + '분 · ' + number.format(route.distanceMeters) + 'm'));
+        const limit = conditions.maxCommuteMinutes;
+        const filter = mode === 'walking' && conditions.transportMode === 'walk' &&
+          place.id === searchPlace?.id && Number.isFinite(limit)
+          ? '검색 조건 ' + limit + '분 ' + (route.durationMinutes > limit ? '초과' : '이내') : null;
+        result.append(element('small', 'listing-meta', [mode === 'walking' ? 'TMAP 보행 경로' : mode === 'bus' ? 'TMAP · 도보 포함' : 'TMAP', dateLabel(route.calculatedAt,true), filter].filter(Boolean).join(' · ')));
+        row.append(result);
+      } else if (!enabled(mode)) {
+        row.append(element('span','listing-meta',route?.reason ? listingRouteIssue(mode,route.reason) : '현재 조회 불가'));
+      } else if (!name) {
+        row.append(element('span','listing-meta','목적지를 선택해 주세요.'));
+      } else {
+        const control = element('div', 'listing-travel-control');
+        if (route) control.append(element('span','listing-meta',listingRouteIssue(mode,route.reason || 'invalid-response')));
+        const query = button(busyMode === mode ? '조회 중…' : '시간 확인','choice-button',() => calculate(mode));
+        query.setAttribute('aria-label',name + '까지 ' + label + ' 시간 확인');
+        query.disabled = Boolean(current);
+        control.append(query);
+        row.append(control);
       }
-      place = target;
-      route = null;
-      onDestination(place);
-      route = await request('/api/routes/walking', {listingId:room.id, destinationId:place.id}, signal);
-      if (signal.aborted) return;
+      if (mode === 'bus' && !measured && (!enabled(mode) || route?.reason)) {
+        if (place?.verified && validPoint(place)) {
+          const link = element('a','listing-link listing-transit-link','카카오맵 대중교통 ↗');
+          link.href = 'https://map.kakao.com/link/by/traffic/' +
+            encodeURIComponent('매물') + ',' + room.lat + ',' + room.lng + '/' +
+            encodeURIComponent('목적지') + ',' + place.lat + ',' + place.lng;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          row.append(link);
+        } else if (inWonju && !place) {
+          const select = button(busyMode === 'destination' ? '확인 중…' : '원주캠퍼스 선택','choice-button listing-transit-link',() => calculate());
+          select.disabled = Boolean(current);
+          row.append(select);
+        }
+      }
+      details.append(row);
+    }
+    actions.replaceChildren();
+    const choose = button(name ? '다른 목적지 찾기' : '목적지 찾기', 'choice-button', () => {
+      if (!picker) {
+        picker = placeFinder({labelText:'도착할 장소',submitText:'장소 검색',signal,onError:authFailure,onSelect:target => {
+          current?.abort();
+          current = null;
+          busyMode = null;
+          choosePlace(target);
+        }});
+        picker.classList.add('listing-walk-picker');
+        panel.append(picker);
+      }
+      picker.hidden = false;
+      choose.setAttribute('aria-expanded','true');
+      picker.querySelector('input').focus();
+    });
+    choose.setAttribute('aria-expanded', String(Boolean(picker && !picker.hidden)));
+    actions.append(choose);
+  }
+
+  async function calculate(mode) {
+    if (current || signal.aborted || (mode && !enabled(mode))) return;
+    const operation = new AbortController();
+    current = operation;
+    busyMode = mode || 'destination';
+    render();
+    try {
+      if (!place) {
+        const data = await request('/api/destinations', {query:'강원대학교 원주캠퍼스'}, operation.signal);
+        if (operation.signal.aborted) return;
+        const campus = data.destinations?.find(item => item.id === 'knu-wonju' && item.verified && validPoint(item));
+        if (!campus) {
+          routes[mode || 'bus'] = {reason:'unverified-destination'};
+          return;
+        }
+        choosePlace(campus);
+      }
+      if (!mode) return;
+      const payload = {listingId:room.id, destinationId:place.id};
+      if (mode !== 'walking') payload.mode = mode;
+      const route = await request('/api/routes/walking',payload,operation.signal);
+      if (operation.signal.aborted) return;
+      routes[mode] = route;
       if (route.reason === 'unauthorized') authFailure({status:401});
-      if (!signal.aborted) render();
     } catch (error) {
-      if (!signal.aborted) {
-        render();
-        summary.textContent = error.message;
+      if (!operation.signal.aborted) {
+        routes[mode || 'bus'] = {reason:'network'};
         authFailure(error);
       }
-    } finally { busy = false; }
+    } finally {
+      if (current === operation) {
+        current = null;
+        busyMode = null;
+        if (!signal.aborted) render();
+      }
+    }
   }
   render();
   return panel;

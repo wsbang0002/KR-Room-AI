@@ -6,11 +6,11 @@ import {withDatasetOrigin} from '../../lib/inventory.js';
 import {listingKey} from '../../lib/listing-store.js';
 import {admin,endpoint,HttpError,privateData} from '../../lib/security.js';
 import {redis} from '../../lib/store.js';
-import {validWalkingPoint,walkingRoute,walkingSettings} from '../../lib/walking.js';
+import {listingRouteSettings,validWalkingPoint,walkingRoute} from '../../lib/walking.js';
 
-const fields=new Set(['listingId','destinationId','diagnostic','confirmFreePlan']);
-function unavailable(reason){
- return {status:'unconfirmed',mode:'walking',provider:'tmap',reason,cacheHit:false};
+const fields=new Set(['listingId','destinationId','diagnostic','confirmFreePlan','mode']);
+function unavailable(mode,reason){
+ return {status:'unconfirmed',mode,provider:'tmap',reason,cacheHit:false};
 }
 
 export async function handleWalking(body,{req,env=process.env,store,fetcher=fetch}={}){
@@ -22,22 +22,25 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
     ('confirmFreePlan' in body&&(body.diagnostic!==true||typeof body.confirmFreePlan!=='boolean'))){
   throw new HttpError(400,'매물 ID와 목적지 ID를 입력하세요.');
  }
- const {listingId,destinationId,diagnostic=false,confirmFreePlan=false}=body;
+ const {listingId,destinationId,diagnostic=false,confirmFreePlan=false,mode='walking'}=body;
+ if(!['walking','car','bus'].includes(mode)||(mode!=='walking'&&(diagnostic||'confirmFreePlan' in body))){
+  throw new HttpError(400,'매물에서 조회할 이동수단을 확인하세요.');
+ }
  const key=listingKey(listingId);
  if(typeof destinationId!=='string'||!destinationId.trim()||destinationId.length>180){
   throw new HttpError(400,'목적지 ID를 확인하세요.');
  }
- const settings=walkingSettings(env);
+ const settings=listingRouteSettings(mode,env);
  const manualApproval=diagnostic&&confirmFreePlan&&settings.oneShotAllowed;
- if(!(diagnostic?settings.diagnosticEnabled||manualApproval:settings.enabled))return unavailable('disabled');
- if(!settings.keyConfigured)return unavailable('missing-key');
+ if(!(diagnostic?settings.diagnosticEnabled||manualApproval:settings.enabled))return unavailable(mode,'disabled');
+ if(!settings.keyConfigured)return unavailable(mode,'missing-key');
 
  let db,listing,destination;
  try{
   db=store||redis(env,fetcher);
   listing=await db.get(key);
   destination=await getDestination(destinationId,{store:db,env,fetcher});
- }catch{return unavailable('redis-unavailable');}
+ }catch{return unavailable(mode,'redis-unavailable');}
  if(!destination?.verified)throw new HttpError(404,'좌표가 확인된 목적지를 선택하세요.');
  if(listing?.id===listingId)listing={...listing,...listingOrigin(listing)};
  if(!validWalkingPoint(listing)){
@@ -45,7 +48,7 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
   listing=withDatasetOrigin(listing,loaded.items.find(item=>item.id===listingId));
  }
  if(listing?.id!==listingId)throw new HttpError(404,'매물을 찾을 수 없습니다.');
- return walkingRoute(listing,destination,{req,env,store:db,fetcher,diagnostic,confirmFreePlan});
+ return walkingRoute(listing,destination,{req,env,store:db,fetcher,diagnostic,confirmFreePlan,mode});
 }
 
 // A route's string status is application data. Only the endpoint wrapper sets HTTP status.

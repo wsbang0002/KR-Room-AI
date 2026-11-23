@@ -25,6 +25,7 @@ let inventoryPublic = null;
 let signedIn = false;
 let waitingSearch = null;
 let walkingEnabled = null;
+let listingRoutes = {};
 let routeInitialized = false;
 
 function element(tag, className, text) {
@@ -77,12 +78,14 @@ async function readPublicationState() {
     const data = await request('/api/status');
     inventoryPublic = typeof data.privateData === 'boolean' ? !data.privateData : null;
     walkingEnabled = data.walking?.enabled === true && data.walking?.keyConfigured === true;
+    listingRoutes = data.listingRoutes || {};
     if (walkingEnabled && !routeInitialized) {
       routeInitialized = true;
       setupPublicRoute();
     }
   } catch {
     inventoryPublic = null;
+    listingRoutes = {};
   }
 }
 
@@ -127,7 +130,7 @@ async function setupPublicRoute() {
     feedback.textContent = 'TMAP에서 보행 경로를 확인하고 있어요.';
     try {
       const route = await request('/api/routes/walking', {publicOriginId:from.value, destinationId:to.value});
-      if (measuredWalk(route)) {
+      if (measuredRoute(route)) {
         const updated = dateLabel(route.calculatedAt, true);
         feedback.textContent = `${from.text.split(' · ')[0]} → ${to.text.split(' · ')[0]} · 도보 예상 ${route.durationMinutes}분 · ${number.format(route.distanceMeters)}m · TMAP · ${updated ? updated + ' 계산 (한국시간)' : '계산 시각 미확인'}${route.cacheHit ? ' · 저장된 경로' : ''}`;
       } else {

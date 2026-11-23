@@ -42,7 +42,7 @@ test('typed POIs can use a verified address, survive a budget edit, and never ve
 });
 
 test('every mode asks for a named destination; a default invented by the AI cannot complete a time limit',()=>{
- for(const mode of ['도보','대중교통','자동차']){
+ for(const mode of ['도보','대중교통','자동차','버스로','자가용으로']){
   const ask=searchTurn({query:'원주시 '+mode+' 15분 이내'},{ai:{destination:'강원대학교 원주캠퍼스'}});
   assert.equal(ask.kind,'destination');assert.equal(ask.conditions.destination,null);
   const notNamed=searchTurn({query:'학교요',pending:ask.pending});

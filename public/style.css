@@ -170,6 +170,13 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .listing-commute { margin: 12px 0 6px; color: var(--link); font-weight: 660; font-size: .94rem; }
 .listing-walk { margin-top: 15px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; }
 .listing-walk .listing-commute { margin-top: 0; }
+.listing-travel-times { margin-top: 10px; }
+.listing-travel-row { display: grid; grid-template-columns: 3.4em minmax(0,1fr); align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: .87rem; }
+.listing-travel-row .listing-transit-link { grid-column: 2; justify-self: start; }
+.listing-travel-row strong { font-weight: 650; }
+.listing-travel-row .listing-meta, .listing-walk > .listing-meta { margin-top: 0; }
+.listing-travel-result small { display: block; font-size: .76rem; }
+.listing-travel-control { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; }
 .listing-walk-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
 .listing-walk button { max-width: 100%; min-height: 42px; border-radius: 6px; overflow-wrap: anywhere; }
 .listing-walk-actions > button:first-child { background: var(--chip); }

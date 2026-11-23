@@ -2,7 +2,8 @@ import {publicWalking,publicWalkingPlaces} from '../../lib/public-walking.js';
 import {loadListings} from '../../lib/apify.js';
 import {listingOrigin} from '../../lib/core.js';
 import {getDestination} from '../../lib/destinations.js';
-import {withDatasetOrigin} from '../../lib/inventory.js';
+import {selectListing} from '../../lib/inventory.js';
+import {listingFreshness} from '../../lib/freshness.js';
 import {listingKey} from '../../lib/listing-store.js';
 import {admin,endpoint,HttpError,privateData} from '../../lib/security.js';
 import {redis} from '../../lib/store.js';
@@ -40,9 +41,9 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
  }catch{return unavailable('redis-unavailable');}
  if(!destination?.verified)throw new HttpError(404,'좌표가 확인된 목적지를 선택하세요.');
  if(listing?.id===listingId)listing={...listing,...listingOrigin(listing)};
- if(!validWalkingPoint(listing)){
+ if(!validWalkingPoint(listing)||listingFreshness(listing).syncStatus!=='current'){
   const loaded=await loadListings({env,fetcher});
-  listing=withDatasetOrigin(listing,loaded.items.find(item=>item.id===listingId));
+  listing=selectListing(listing,loaded.items.find(item=>item.id===listingId));
  }
  if(listing?.id!==listingId)throw new HttpError(404,'매물을 찾을 수 없습니다.');
  return walkingRoute(listing,destination,{req,env,store:db,fetcher,diagnostic,confirmFreePlan});

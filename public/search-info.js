@@ -44,7 +44,9 @@ const searchInfo = (() => {
       return {state:'error',text:'매물 정보를 불러오지 못했어요. 잠시 후 다시 검색해 주세요.'};
     const state = matched || pending ? 'results' : 'empty';
     if (matched) message.push(`조건에 맞는 매물 ${matched}개.`);
-    if (pending) message.push(`확인할 조건이 있는 매물 ${pending}개.`);
+    if (pending && !matched && data.unverified.every(room => ['stale','unknown'].includes(room.syncStatus))) {
+      message.push(`최근 7일 이내 수집·관측 기록을 확인할 수 없어 매물 ${pending}개를 확인 필요 목록에 표시했어요.`);
+    } else if (pending) message.push(`확인할 조건이 있는 매물 ${pending}개.`);
     if (!matched && !pending) {
       if (coverage?.state === 'partial') message.push('이 지역 자료의 일부를 조회하지 못해 검색 결과를 확정할 수 없어요.');
       else if (coverage?.state === 'unknown-region') message.push('보유 자료의 지역이 미확인이어서 이 지역의 매물 수를 확정할 수 없어요.');

@@ -32,10 +32,11 @@ function clarification(turn,region){
 
 async function rankWithWalking(items,conditions,selection,options,{snapshot},calculateRoute){
  const settings=walkingSettings(options.env);
+ const now=Date.now();
  const walkingRoutes=new Map();
  const walking={status:'not-requested',selectedCount:0,successCount:0};
  const requireDestinationTime=conditions.transportMode==='walk'&&selection.explicit;
- const rank=()=>recommend(items,conditions,{snapshot,walkingRoutes,requireDestinationTime});
+ const rank=()=>recommend(items,conditions,{snapshot,walkingRoutes,requireDestinationTime,now});
  if(!requireDestinationTime){
   return {...rank(),walking};
  }
@@ -49,7 +50,7 @@ async function rankWithWalking(items,conditions,selection,options,{snapshot},cal
  }
  // Rank on cost and options first. Only candidates with confirmed non-commute
  // filters can spend a route slot. No inferred straight-line times participate.
- const shortlist=recommend(items,{...conditions,maxCommuteMinutes:null},{snapshot,walkingRoutes}).results
+ const shortlist=recommend(items,{...conditions,maxCommuteMinutes:null},{snapshot,walkingRoutes,now}).results
   .filter(item=>item.id&&validWalkingPoint(item)).slice(0,settings.maxPerSearch);
  await Promise.all(shortlist.map(async item=>{
   try{
@@ -124,7 +125,7 @@ export async function handleSearch(body,{req,env=process.env,fetcher=fetch,store
  const coverage=regionalSummary(loaded,conditions.location);
  const ranked=await rankWithWalking(loaded.items,conditions,selection,options,
   {snapshot:false},calculateRoute);
- const pendingRoute=ranked.unverified.some(item=>item.missingConditions.includes('이동시간'));
+ const pendingRoute=ranked.unverified.some(item=>item.syncStatus==='current'&&item.missingConditions.includes('이동시간'));
  return {status:200,data:{mode:'real',...parsed,ai:undefined,dataSource:loaded.source,coverage,conditions,count:loaded.items.length,nearCampusVerifiedCount:loaded.items.filter(x=>x.nearCampusVerified).length,...ranked,collectionNeeded:!ranked.results.length&&!pendingRoute&&['available','empty'].includes(coverage.state),notice:loaded.notice}};
 }
 export default endpoint('POST',req=>handleSearch(req.body,{req}));

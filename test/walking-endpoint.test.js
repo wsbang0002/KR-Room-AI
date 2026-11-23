@@ -77,3 +77,30 @@ test('a stored listing missing either coordinate uses the matching Dataset origi
  assert.equal(data.originApproximate,true);
  assert.deepEqual(upstream,['api.apify.com','apis.openapi.sk.com']);
 });
+
+test('a card route uses the current Dataset origin when Redis still has a complete but stale origin',async()=>{
+ const observedAt=Date.now();
+ const oldRoom={id:ids.listingId,lat:37.33,lng:127.96,approximate:false,
+  lastSeenAt:new Date(observedAt-8*86_400_000).toISOString()};
+ const currentRoom={id:ids.listingId,rent:45,latitude:37.341,longitude:127.929,
+  location_is_approximate:true,collectedAt:new Date(observedAt).toISOString()};
+ const requestedOrigins=[];
+ const data=await handleWalking(ids,{
+  req,env:{...env,ENABLE_WALKING_ROUTES:'true',APIFY_DATASET_ID:'updated-card-origin',APIFY_TOKEN:'mock'},
+  store:{
+   get:async()=>oldRoom,
+   command:async args=>args[1]===RESERVE_WALK?['owner']:1
+  },
+  fetcher:async(url,init)=>{
+   if(new URL(url).hostname==='api.apify.com')return Response.json([currentRoom]);
+   assert.equal(new URL(url).hostname,'apis.openapi.sk.com');
+   const {startY,startX}=JSON.parse(init.body);
+   requestedOrigins.push([startY,startX]);
+   return Response.json({features:[{type:'Feature',geometry:{type:'Point'},properties:{pointType:'SP',totalTime:480,totalDistance:550}}]});
+  }
+ });
+ assert.deepEqual(requestedOrigins,[[currentRoom.latitude,currentRoom.longitude]]);
+ assert.equal(data.status,'success');
+ assert.equal(data.listingId,currentRoom.id);
+ assert.equal(data.originApproximate,true);
+});

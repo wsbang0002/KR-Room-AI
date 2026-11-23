@@ -92,3 +92,15 @@ test('listing car and bus lookups require listing access, reject coordinate over
  const disabled=await handleWalking({...ids,mode:'car'},{...options,env:{...options.env,ENABLE_WALKING_ROUTES:'false'}});
  assert.equal(disabled.reason,'disabled');
 });
+
+test('public bus status exposes the active provider and hard free cap without credential contents',()=>{
+ const options={...env,ENABLE_WALKING_ROUTES:'true',KAKAO_REST_API_KEY:'private-kakao-mock',TMAP_TRANSIT_APP_KEY:'private-tmap-mock'};
+ const status=statusData(options);
+ assert.equal(status.listingRoutes.bus.provider,'kakao');
+ assert.equal(status.listingRoutes.bus.dailyLimit,100);
+ assert.equal(statusData({...options,KAKAO_TRANSIT_DAILY_APP_LIMIT:'101'}).listingRoutes.bus.dailyLimit,100);
+ assert.equal(statusData({...options,KAKAO_TRANSIT_DAILY_APP_LIMIT:'NaN'}).listingRoutes.bus.dailyLimit,0);
+ assert.equal(statusData({...options,KAKAO_REST_API_KEY:''}).listingRoutes.bus.provider,'tmap');
+ assert.equal(statusData({...options,KAKAO_REST_API_KEY:'',TMAP_TRANSIT_APP_KEY:''}).listingRoutes.bus.enabled,false);
+ assert.ok(!JSON.stringify(status).includes('private-'));
+});

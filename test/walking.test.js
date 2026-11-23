@@ -337,3 +337,83 @@ test('bus no-service codes from successful and unsuccessful HTTP responses never
   assert.equal(result.durationMinutes,undefined);
  }
 });
+
+const kakaoTrip=(type,totalTime,totalDistance)=>({properties:{type,totalTime,totalDistance},steps:[]});
+const kakaoPlan=(...routes)=>({status:'OK',routes});
+
+test('a signed-in listing card measures the fastest bus route with the Kakao REST API and its server coordinates',async()=>{
+ const {handleWalking}=await import('../api/routes/walking.js');
+ const {getDestination,DEFAULT_DESTINATION_ID}=await import('../lib/destinations.js');
+ const {issueSearchSession}=await import('../lib/search-session.js');
+ const campus=await getDestination(DEFAULT_DESTINATION_ID);
+ const key='mock-kakao-rest-key';
+ const calls=[];
+ const options=fixture(async(url,init)=>{
+  const request=new URL(url);
+  calls.push(request.origin+request.pathname);
+  assert.equal(init.method||'GET','GET');
+  assert.equal(init.redirect,'error');
+  assert.equal(new Headers(init.headers).get('authorization'),'KakaoAK '+key);
+  assert.equal(new Headers(init.headers).has('appKey'),false);
+  assert.equal(request.href.includes(key),false);
+  assert.equal(request.searchParams.get('input_coord'),'WGS84');
+  assert.equal(init.cache,'no-store');
+  assert.deepEqual(['start_x','start_y','end_x','end_y'].map(name=>request.searchParams.get(name)),
+   [room.lng,room.lat,campus.lng,campus.lat].map(String));
+  return Response.json(kakaoPlan(
+   kakaoTrip('SUBWAY',300,2100),kakaoTrip('BUS_AND_SUBWAY',601,4300),
+   kakaoTrip('BUS',2400,6200),kakaoTrip('BUS',2115,5013)
+  ));
+ });
+ Object.assign(options.env,{KAKAO_REST_API_KEY:key,TMAP_TRANSIT_APP_KEY:'mock-tmap-transit',TMAP_ROUTE_CACHE_ALLOWED:'true'});
+ options.req={headers:{cookie:issueSearchSession(options.env).cookie.split(';')[0]}};
+ await options.store.set('knuroom:listing:'+room.id,room);
+ const ids={listingId:room.id,destinationId:DEFAULT_DESTINATION_ID,mode:'bus'};
+ const route=await handleWalking(ids,options);
+ assert.deepEqual([route.status,route.provider,route.mode,route.listingId,route.destinationId],
+  ['success','kakao','bus',room.id,DEFAULT_DESTINATION_ID]);
+ assert.deepEqual([route.durationSeconds,route.durationMinutes,route.distanceMeters,route.cacheHit],[2115,36,5013,false]);
+ assert.deepEqual(calls,['https://dapi.kakao.com/v2/routing/publictraffic']);
+ assert.equal(route.originApproximate,true);
+ assert.ok(!JSON.stringify([route,[...options.store.data.values()],options.store.calls]).includes(key));
+ assert.ok(!JSON.stringify(options.store.calls).includes('durationSeconds'));
+});
+
+test('Kakao and TMAP bus attempts keep separate reservation budgets and locks',async()=>{
+ const hosts=[];
+ const options=fixture(async url=>{
+  const host=new URL(url).hostname;
+  hosts.push(host);
+  return host==='dapi.kakao.com'?Response.json(kakaoPlan(kakaoTrip('BUS',700,3000))):
+   Response.json(busSummary({pathType:2,totalTime:900,totalDistance:3200}));
+ });
+ const kakao={...options.env,KAKAO_REST_API_KEY:'k-test',TMAP_TRANSIT_APP_KEY:'sk-test',KAKAO_TRANSIT_DAILY_APP_LIMIT:'1'};
+ const tmap={...options.env,TMAP_TRANSIT_APP_KEY:'sk-test',TMAP_TRANSIT_DAILY_APP_LIMIT:'1'};
+ const request=(id,env,store=options.store)=>walkingRoute({...room,id},dest,{...options,mode:'bus',env,store});
+ assert.equal((await request(room.id,kakao)).durationSeconds,700);
+ const exhausted=await request('another-room',kakao);
+ assert.deepEqual([exhausted.reason,exhausted.provider],['daily-limit','kakao']);
+ assert.equal((await request(room.id,tmap)).durationSeconds,900);
+ assert.equal((await request('another-room',tmap)).reason,'daily-limit');
+ assert.equal(await walkingUsage(options.store,options.now()),0);
+ const offline=await request('offline',kakao,{command:async()=>{throw Error('redis offline');}});
+ assert.deepEqual([offline.reason,offline.provider],['redis-unavailable','kakao']);
+ assert.deepEqual(hosts,['dapi.kakao.com','apis.openapi.sk.com']);
+});
+
+test('Kakao quota errors, no results and invalid bus totals never trigger TMAP fallback or produce an estimate',async()=>{
+ const invalid=[kakaoPlan(kakaoTrip('BUS',null,5013)),kakaoPlan(kakaoTrip('BUS',2115,-1))];
+ for(const [status,body,reason] of [
+  [400,{code:-10,msg:'quota details'},'upstream-rate-limit'],[429,{},'upstream-rate-limit'],
+  [401,{},'authentication'],[503,{},'upstream-server'],
+  [200,{status:'NO_RESULTS'},'route-not-found'],[200,kakaoPlan(kakaoTrip('BUS_AND_SUBWAY',200,500)),'route-not-found'],
+  [200,invalid[0],'invalid-response'],[200,invalid[1],'invalid-response']
+ ]){
+  const hosts=[];
+  const options=fixture(async url=>{hosts.push(new URL(url).hostname);return Response.json(body,{status});});
+  Object.assign(options.env,{KAKAO_REST_API_KEY:'kakao-test',TMAP_TRANSIT_APP_KEY:'tmap-test'});
+  const route=await walkingRoute(room,dest,{...options,mode:'bus'});
+  assert.deepEqual([route.status,route.reason,route.provider,route.durationMinutes],['unconfirmed',reason,'kakao',undefined]);
+  assert.deepEqual(hosts,['dapi.kakao.com']);
+ }
+});

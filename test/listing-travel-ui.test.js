@@ -173,3 +173,31 @@ test('a Wonju listing without a destination resolves the curated campus without 
   assert.deepEqual(destinations,[campus.id]);
   assert.ok(visibleNodes(panel).some(node => node.tag === 'a' && /카카오맵/.test(node.textContent)));
 });
+
+test('verified Kakao bus time shows its source and directions while other modes require TMAP', async () => {
+  const {panel,requests} = makeCard({
+    conditions:{destinationPlace:campus},
+    room:{...listing,walkingRoute:{...result('walking',16),provider:'kakao'}},
+    respond:(_,body)=>({...result(body.mode,body.mode === 'bus' ? 22 : 5),provider:'kakao'})
+  });
+  await action(panel,/버스 시간 확인/);
+  await action(panel,/자동차 시간 확인/);
+  assert.match(visibleText(panel),/예상 22분 · 540m/);
+  assert.match(visibleText(panel),/카카오맵 · 도보 포함/);
+  assert.doesNotMatch(visibleText(panel),/TMAP · 도보 포함|예상 (16|5)분/);
+  const link=visibleNodes(panel).find(node=>node.tag==='a');
+  assert.equal(new URL(link.href).origin,'https://map.kakao.com');
+  assert.deepEqual(requests.map(({body})=>body.mode),['bus','car']);
+});
+
+test('Kakao bus measurements require the selected listing and destination and a supported provider', async () => {
+  for (const override of [{listingId:'another-listing'},{destinationId:'another-campus'},{provider:'unknown'},{mode:'walking'}]) {
+    const {panel}=makeCard({
+      conditions:{destinationPlace:campus},
+      respond:()=>({...result('bus',22),provider:'kakao',...override})
+    });
+    await action(panel,/버스 시간 확인/);
+    assert.doesNotMatch(visibleText(panel),/예상 22분|카카오맵 · 도보 포함/);
+    assert.ok(visibleNodes(panel).some(node=>node.tag==='a' && new URL(node.href).origin==='https://map.kakao.com'));
+  }
+});

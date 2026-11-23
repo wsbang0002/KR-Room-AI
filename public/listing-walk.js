@@ -1,6 +1,8 @@
-function measuredRoute(route) {
-  return route?.status === 'success' && route.provider === 'tmap' &&
-    Number.isFinite(route.durationMinutes) && Number.isFinite(route.distanceMeters);
+function measuredRoute(route, mode = 'walking') {
+  if (route?.status !== 'success' || route.mode !== mode) return false;
+  const knownProvider = route.provider === 'tmap' || (mode === 'bus' && route.provider === 'kakao');
+  return knownProvider && Number.isFinite(route.durationMinutes) && route.durationMinutes >= 0 &&
+    Number.isFinite(route.distanceMeters) && route.distanceMeters >= 0;
 }
 
 function walkingIssue(reason) {
@@ -155,8 +157,8 @@ function listingWalk(room, conditions, signal, onDestination) {
       const row = element('div', 'listing-travel-row');
       row.append(element('strong', '', label));
       const route = routes[mode];
-      const measured = place && route?.mode === mode && route.listingId === room.id &&
-        route.destinationId === place.id && measuredRoute(route);
+      const measured = place && measuredRoute(route,mode) && route.listingId === room.id &&
+        route.destinationId === place.id;
       if (measured) {
         const result = element('div', 'listing-travel-result');
         result.append(element('span', '', '예상 ' + route.durationMinutes + '분 · ' + number.format(route.distanceMeters) + 'm'));
@@ -164,7 +166,9 @@ function listingWalk(room, conditions, signal, onDestination) {
         const filter = mode === 'walking' && conditions.transportMode === 'walk' &&
           place.id === searchPlace?.id && Number.isFinite(limit)
           ? '검색 조건 ' + limit + '분 ' + (route.durationMinutes > limit ? '초과' : '이내') : null;
-        result.append(element('small', 'listing-meta', [mode === 'walking' ? 'TMAP 보행 경로' : mode === 'bus' ? 'TMAP · 도보 포함' : 'TMAP', dateLabel(route.calculatedAt,true), filter].filter(Boolean).join(' · ')));
+        const source = route.provider === 'kakao' ? '카카오맵' : 'TMAP';
+        const attribution = mode === 'bus' ? source + ' · 도보 포함' : mode === 'walking' ? 'TMAP 보행 경로' : source;
+        result.append(element('small', 'listing-meta', [attribution,dateLabel(route.calculatedAt,true),filter].filter(Boolean).join(' · ')));
         row.append(result);
       } else if (!enabled(mode)) {
         row.append(element('span','listing-meta',route?.reason ? listingRouteIssue(mode,route.reason) : '현재 조회 불가'));
@@ -179,7 +183,7 @@ function listingWalk(room, conditions, signal, onDestination) {
         control.append(query);
         row.append(control);
       }
-      if (mode === 'bus' && !measured && (!enabled(mode) || route?.reason)) {
+      if (mode === 'bus' && (!enabled(mode) || (route && (!measured || route.provider === 'kakao')))) {
         if (place?.verified && validPoint(place)) {
           const link = element('a','listing-link listing-transit-link','카카오맵 대중교통 ↗');
           link.href = 'https://map.kakao.com/link/by/traffic/' +

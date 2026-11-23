@@ -10,8 +10,8 @@ export function statusData(env=process.env){
  const model=primaryGeminiModel(env);
  const listingRoutes={};
  for(const mode of ['car','bus']){
-  const {enabled,keyConfigured,dailyLimit}=listingRouteSettings(mode,env);
-  listingRoutes[mode]={enabled,keyConfigured,dailyLimit};
+  const {enabled,keyConfigured,dailyLimit,provider}=listingRouteSettings(mode,env);
+  listingRoutes[mode]={enabled,keyConfigured,dailyLimit,provider};
  }
  return {
   service:'KNU Room AI',version:'0.6.0',analysisProvider,

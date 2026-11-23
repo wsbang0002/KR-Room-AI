@@ -6,12 +6,9 @@ import {withDatasetOrigin} from '../../lib/inventory.js';
 import {listingKey} from '../../lib/listing-store.js';
 import {admin,endpoint,HttpError,privateData} from '../../lib/security.js';
 import {redis} from '../../lib/store.js';
-import {listingRouteSettings,validWalkingPoint,walkingRoute} from '../../lib/walking.js';
+import {listingRouteSettings,unconfirmedRoute,validWalkingPoint,walkingRoute} from '../../lib/walking.js';
 
 const fields=new Set(['listingId','destinationId','diagnostic','confirmFreePlan','mode']);
-function unavailable(mode,reason){
- return {status:'unconfirmed',mode,provider:'tmap',reason,cacheHit:false};
-}
 
 export async function handleWalking(body,{req,env=process.env,store,fetcher=fetch}={}){
  if(body&&Object.hasOwn(body,'publicOriginId'))return publicWalking(body,{req,env,store,fetcher});
@@ -31,16 +28,17 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
   throw new HttpError(400,'목적지 ID를 확인하세요.');
  }
  const settings=listingRouteSettings(mode,env);
+ const unavailable=reason=>unconfirmedRoute(reason,mode,settings.provider);
  const manualApproval=diagnostic&&confirmFreePlan&&settings.oneShotAllowed;
- if(!(diagnostic?settings.diagnosticEnabled||manualApproval:settings.enabled))return unavailable(mode,'disabled');
- if(!settings.keyConfigured)return unavailable(mode,'missing-key');
+ if(!(diagnostic?settings.diagnosticEnabled||manualApproval:settings.enabled))return unavailable('disabled');
+ if(!settings.keyConfigured)return unavailable('missing-key');
 
  let db,listing,destination;
  try{
   db=store||redis(env,fetcher);
   listing=await db.get(key);
   destination=await getDestination(destinationId,{store:db,env,fetcher});
- }catch{return unavailable(mode,'redis-unavailable');}
+ }catch{return unavailable('redis-unavailable');}
  if(!destination?.verified)throw new HttpError(404,'좌표가 확인된 목적지를 선택하세요.');
  if(listing?.id===listingId)listing={...listing,...listingOrigin(listing)};
  if(!validWalkingPoint(listing)){

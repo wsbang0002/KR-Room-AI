@@ -1,12 +1,14 @@
-# TMAP 이동 경로 운영 기준
+# 매물 이동 경로 운영 기준
 
 ## 매물별 자가용·버스 조회
 
 방 찾기에서 매물과 목적지를 선택한 뒤 원하는 이동수단을 눌러 예상 시간을 조회한다. 자동차와 버스는 각 버튼을 눌렀을 때만 조회하며, 같은 매물과 목적지의 도보 시간과 함께 표시한다. 자동차와 버스 요약은 Redis에 저장하지 않는다. 해당 조회로 검색 순위와 결과 목록을 다시 계산하지 않는다.
 
 - **자가용**은 기존 `TMAP_APP_KEY`로 자동차 경로안내를 조회한다. 앱의 `TMAP_DAILY_APP_LIMIT`(최대 200회)은 도보·자동차의 합산 한도다. TMAP Free 상품의 경로안내 한도는 하루 1,000건이며 초과 시 차단된다. [SK 요금표](https://openapi.sk.com/products/calc?menuSeq=5&svcSeq=4)
-- **버스**는 TMAP 대중교통 **Free** 상품의 요약정보를 사용한다. SK Open API에서 해당 상품을 이용할 앱을 확인하고 그 앱 키를 Vercel 프로젝트의 Production 환경변수 `TMAP_TRANSIT_APP_KEY`에 Sensitive로 등록한 뒤 재배포한다. 요약정보 Free 한도는 하루 10회이며 초과 시 차단된다. 앱은 Redis에서 호출마다 1회를 예약하며 `TMAP_TRANSIT_DAILY_APP_LIMIT`으로 한도를 0~10회로 낮출 수 있다. 반환된 버스 경로(`pathType=2`) 중 총 소요 시간이 가장 짧은 값을 사용한다. [상품 등록](https://openapi.sk.com/products/detail?svcSeq=59) · [요금과 한도](https://transit.tmapmobility.com/) · [요약 API](https://transit.tmapmobility.com/docs/routes/sub)
-- 공개 `GET /api/status`의 `listingRoutes.car`, `listingRoutes.bus`에서 활성화 여부, 키 등록 여부와 앱 한도를 확인할 수 있다. 버스 키가 없거나 경로를 받지 못한 경우에는 카카오맵에서 같은 두 지점을 조회할 수 있다. [카카오맵 길찾기 URL](https://apis.map.kakao.com/web/guide/#routeurl)
+- **카카오맵 버스**를 사용하려면 [카카오디벨로퍼스 앱](https://developers.kakao.com/console/app)에서 카카오맵 → 사용 설정 → 상태를 ON으로 설정한다. 앱 정보에서 **카카오맵 무료 쿼터** 배지를 확인하고 카카오맵 유료 API 사용을 끈 상태로 둔다. 앱의 **REST API 키**를 Vercel Production 환경변수 `KAKAO_REST_API_KEY`에 Sensitive로 저장하고 재배포한다. 무료 쿼터 배지는 개발자 계정에서 카카오맵을 최초로 활성화한 앱에 제공한다. [카카오맵 설정 및 무료 정책](https://developers.kakao.com/docs/ko/kakaomap/common)
+- 매물 카드에서 버스를 선택하면 카카오맵에 출발지와 도착지 좌표로 대중교통 경로를 요청한다. 버스 경로 중 총 소요 시간이 가장 짧은 경로의 시간과 거리를 표시한다. 앱 자체 한도는 한국시간 기준 하루 100회이며 `KAKAO_TRANSIT_DAILY_APP_LIMIT`로 0~100회 범위에서 조정할 수 있다. 조회 결과는 현재 화면에만 표시하고 데이터베이스나 검색 점수에 저장하지 않는다. [경로 API](https://developers.kakao.com/docs/ko/kakaomap/rest-api) · [결과 표시·보관 기준](https://devtalk.kakao.com/t/api/152264/2)
+- **TMAP 버스**는 카카오 키를 설정하지 않았을 때 선택할 수 있다. TMAP 대중교통 **Free** 상품의 요약정보를 사용한다. SK Open API에서 해당 상품을 이용할 앱을 확인하고 그 앱 키를 Vercel 프로젝트의 Production 환경변수 `TMAP_TRANSIT_APP_KEY`에 Sensitive로 등록한 뒤 재배포한다. 요약정보 Free 한도는 하루 10회이며 초과 시 차단된다. 앱은 Redis에서 호출마다 1회를 예약하며 `TMAP_TRANSIT_DAILY_APP_LIMIT`으로 한도를 0~10회로 낮출 수 있다. 반환된 버스 경로(`pathType=2`) 중 총 소요 시간이 가장 짧은 값을 사용한다. [상품 등록](https://openapi.sk.com/products/detail?svcSeq=59) · [요금과 한도](https://transit.tmapmobility.com/) · [요약 API](https://transit.tmapmobility.com/docs/routes/sub)
+- 공개 `GET /api/status`의 `listingRoutes.car`, `listingRoutes.bus`에서 제공자, 활성화 여부, 키 등록 여부와 앱 한도를 확인할 수 있다. 카카오맵 조회 실패 시 카카오맵 길찾기 링크를 표시하며 추가 API를 호출하지 않는다. 버스 키가 없거나 경로를 받지 못한 경우에는 카카오맵에서 같은 두 지점을 조회할 수 있다. [카카오맵 길찾기 URL](https://apis.map.kakao.com/web/guide/#routeurl)
 
 2026년 11월 19일(KST) 공개 상품 설명과 약관 확인 기준. 계정 소유자는 `KNU-Room-AI` 앱에 `TMAP(Free)`를 등록했다고 보고했다. 계정별 계약·잔여량과 운영 경로 응답은 별도 검증 항목이다.
 

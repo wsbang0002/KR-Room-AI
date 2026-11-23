@@ -74,7 +74,7 @@ test('$9 stop includes outstanding Redis charges even when current account usage
 });
 
 
-test('the default $1 daily cap blocks a second $0.51 reservation after the first finishes',async()=>{
+test('monthly headroom permits a second $0.51 reservation on the same day after settlement',async()=>{
  const store=new FakeRedis();
  let starts=0;
  const fetcher=mockedFetcher({spent:0,hard:10,state:'SUCCEEDED',cost:.51,onStart:()=>starts++});
@@ -84,8 +84,11 @@ test('the default $1 daily cap blocks a second $0.51 reservation after the first
  assert.equal(Number(store.read(saved.reservation.ledger)),510000);
  await collectionStatus(job.jobId,options);
  assert.equal(store.read('knuroom:apify:active'),undefined);
- await assert.rejects(startCollection(c('부산 금정구'),options),{status:429});
- assert.equal(starts,1);
+ await startCollection(c('부산 금정구'),options);
+ assert.equal(starts,2);
+ assert.equal(Number(store.read(saved.reservation.ledger)),1020000);
+ assert.ok(!JSON.stringify(store.calls).includes('knuroom:collect:count:'));
+ assert.ok(!JSON.stringify(store.calls).includes('knuroom:collect:budget:'));
 });
 
 test('a new Actor requests 20 listings and its Dataset, job cache and Redis preserve all 20', async()=>{

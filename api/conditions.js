@@ -1,7 +1,7 @@
 import {isFreshTurn,searchTurn} from '../lib/search-turn.js';
 import {unsupportedConditions,validateAI} from '../lib/conditions.js';
 import {analyzeSearch,selectedProvider} from '../lib/gemini.js';
-import {authenticatedReader,endpoint} from '../lib/security.js';
+import {authenticatedReader,endpoint,publicSavedListings} from '../lib/security.js';
 
 import {fallbackReason} from '../lib/analysis-status.js';
 
@@ -15,7 +15,7 @@ export async function handleConditions(body,{req,env=process.env,fetcher=fetch,s
  const provider=selectedProvider(env);
  const continuation=!fresh&&(body.previous||body.pending);
  if(local.state!=='ready'||continuation||provider==='local')return report(local,'local');
- if(!authenticated&&(env.DATA_RIGHTS_REVIEWED!=='true'||provider!=='openrouter-free'))return report(local,'local');
+ if(!authenticated&&(publicSavedListings(env)||env.DATA_RIGHTS_REVIEWED!=='true'||provider!=='openrouter-free'))return report(local,'local');
  try{
   const result=await analyze(body.query,{req,env,fetcher,store,publicFree:!authenticated});
   if(validateAI(result.ai)&&Object.values(result.ai).some(value=>value!=null)){

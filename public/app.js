@@ -26,7 +26,21 @@ let signedIn = false;
 let waitingSearch = null;
 let walkingEnabled = null;
 let listingRoutes = {};
-let routeInitialized = false;
+let routeAccess = null;
+let publicSavedListings = false;
+let liveCollection = false;
+let lastSearch = null;
+let lastResults = null;
+let overviewRequest = null;
+const collection = regionCollection(request, refreshCollectionResults, () => login.expire());
+
+function updateCollection() {
+  collection.update({signedIn, enabled:liveCollection, busy:Boolean(active),
+    query:lastSearch?.query, conditions:pending ? null : lastSearch?.conditions});
+}
+function canUseRoutes() {
+  return signedIn || (!publicSavedListings && inventoryPublic === true);
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -43,9 +57,11 @@ function button(text, className, click) {
 }
 
 async function request(path, body, signal) {
-  const response = await fetch(path, body === undefined ? {signal} : {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal
+  const options = {signal, credentials:signedIn ? 'same-origin' : 'omit', redirect:'error', cache:'no-store'};
+  if (body !== undefined) Object.assign(options, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
   });
+  const response = await fetch(path, options);
   const data = await response.json();
   if (!response.ok) {
     const error = new Error(data.error || '요청을 완료하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
@@ -64,7 +80,7 @@ function clearCards() {
 }
 
 function canSearch() {
-  return signedIn || inventoryPublic === true;
+  return signedIn || publicSavedListings || inventoryPublic === true;
 }
 
 function showIdleStatus() {
@@ -76,20 +92,36 @@ function showIdleStatus() {
 async function readPublicationState() {
   try {
     const data = await request('/api/status');
+    publicSavedListings = data.publicSavedListings === true;
+    liveCollection = data.liveCollectionEnabled === true && Number(data.apifyMaxCostUsd) > 0 && Number(data.apifyMaxCostUsd) <= .51 && data.apifyMaxResults === 20;
     inventoryPublic = typeof data.privateData === 'boolean' ? !data.privateData : null;
     walkingEnabled = data.walking?.enabled === true && data.walking?.keyConfigured === true;
     listingRoutes = data.listingRoutes || {};
-    if (walkingEnabled && !routeInitialized) {
-      routeInitialized = true;
-      setupPublicRoute();
-    }
+    syncRouteAccess();
+    updateCollection();
   } catch {
     inventoryPublic = null;
+    liveCollection = false;
+    walkingEnabled = false;
     listingRoutes = {};
+    syncRouteAccess();
+    updateCollection();
   }
 }
 
-async function setupPublicRoute() {
+function syncRouteAccess() {
+  if (!walkingEnabled || (publicSavedListings && !signedIn)) {
+    routeAccess?.abort();
+    routeAccess = null;
+    byId('publicRoute').hidden = true;
+    byId('routeFeedback').textContent = '';
+  } else if (!routeAccess) {
+    routeAccess = new AbortController();
+    setupPublicRoute(routeAccess.signal);
+  }
+}
+
+async function setupPublicRoute(signal) {
   const section = byId('publicRoute');
   const origin = byId('routeOrigin'), destination = byId('routeDestination');
   const submit = byId('routeSubmit'), feedback = byId('routeFeedback');
@@ -101,9 +133,11 @@ async function setupPublicRoute() {
   submit.disabled = true;
   let locations;
   try {
-    locations = await request('/api/routes/walking?places=public');
+    locations = await request('/api/routes/walking?places=public', undefined, signal);
+    if (signal.aborted) return;
     if (!locations.origins?.length || !locations.destinations?.length) throw Error();
   } catch {
+    if (signal.aborted) return;
     feedback.textContent = '공개 출발지와 목적지 목록을 불러오지 못했어요.';
     return;
   }
@@ -118,32 +152,44 @@ async function setupPublicRoute() {
     submit.disabled = true;
     feedback.textContent = '';
   }
-  origin.addEventListener('change', pickOrigin);
-  destination.addEventListener('change', () => { submit.disabled = !destination.value; feedback.textContent = ''; });
+  origin.addEventListener('change', pickOrigin, {signal});
+  destination.addEventListener('change', () => { submit.disabled = !destination.value; feedback.textContent = ''; }, {signal});
   byId('publicRouteForm').addEventListener('submit', async event => {
     event.preventDefault();
-    if (submit.disabled || !origin.value || !destination.value) return;
+    if (submit.disabled || (publicSavedListings && !signedIn) || !origin.value || !destination.value) return;
     const from = origin.selectedOptions[0], to = destination.selectedOptions[0];
     submit.disabled = true;
     origin.disabled = true;
     destination.disabled = true;
     feedback.textContent = 'TMAP에서 보행 경로를 확인하고 있어요.';
     try {
-      const route = await request('/api/routes/walking', {publicOriginId:from.value, destinationId:to.value});
+      const route = await request('/api/routes/walking', {publicOriginId:from.value, destinationId:to.value}, signal);
+      if (signal.aborted) return;
       if (measuredRoute(route)) {
         const updated = dateLabel(route.calculatedAt, true);
         feedback.textContent = `${from.text.split(' · ')[0]} → ${to.text.split(' · ')[0]} · 도보 예상 ${route.durationMinutes}분 · ${number.format(route.distanceMeters)}m · TMAP · ${updated ? updated + ' 계산 (한국시간)' : '계산 시각 미확인'}${route.cacheHit ? ' · 저장된 경로' : ''}`;
       } else {
         feedback.textContent = walkingIssue(route.reason);
       }
-    } catch (error) { feedback.textContent = '도보 시간 미확인. ' + error.message; }
-    finally { origin.disabled = false; destination.disabled = false; submit.disabled = false; }
-  });
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error.status === 401 && signedIn) { login.expire(); return; }
+      feedback.textContent = '도보 시간 미확인. ' + error.message;
+    } finally {
+      if (!signal.aborted) { origin.disabled = false; destination.disabled = false; submit.disabled = false; }
+    }
+  }, {signal});
 }
 
 const login = startSearchLogin(value => {
   signedIn = value;
+  syncRouteAccess();
   if (!value) clearSearch();
+  else if (lastResults) {
+    clearCards();
+    paintListingCards(lastResults);
+  }
+  updateCollection();
   if (value && waitingSearch && !active) {
     const {query, destinationId, lookupQuery} = waitingSearch;
     waitingSearch = null;
@@ -152,16 +198,52 @@ const login = startSearchLogin(value => {
       const turn = startRequest();
       loadListings(query, turn, confirmed, destinationId).catch(error => handleFailure(error, turn)).finally(() => finishRequest(turn));
     }
-  } else if (!active) showIdleStatus();
+  } else if (!active && !lastResults) showIdleStatus();
 }, message => { conversation.textContent = message; });
+async function showSavedRegions() {
+  if (!publicSavedListings) return;
+  overviewRequest?.abort();
+  const operation = new AbortController();
+  overviewRequest = operation;
+  const list = byId('savedRegions'), summary = byId('savedSummary');
+  byId('savedBrowse').hidden = false;
+  summary.textContent = '저장된 지역을 확인하고 있어요.';
+  try {
+    // The homepage lists the same saved regions for everyone, independent of session.
+    const res = await fetch('/api/status?scope=coverage', {credentials:'omit', cache:'no-store', redirect:'error', signal:operation.signal});
+    if (!res.ok) throw Error();
+    const data = await res.json();
+    if (operation.signal.aborted) return;
+    const regions = (data.regions || []).filter(row => row.location && row.count > 0);
+    const regionButton = row => button(row.location + ' · ' + number.format(row.count) + '건', 'choice-button', () => submitTurn(row.location, true));
+    list.replaceChildren(...regions.slice(0,6).map(regionButton));
+    if (regions.length > 6) {
+      const more = button('다른 지역 ' + number.format(regions.length - 6) + '곳', 'choice-button', () => {
+        more.replaceWith(...regions.slice(6).map(regionButton));
+      });
+      list.append(more);
+    }
+    if (data.state === 'partial') summary.textContent = '확인된 저장 지역부터 표시해요.';
+    else if (regions.length) summary.textContent = '';
+    else summary.textContent = data.state === 'empty' ? '아직 저장된 매물이 없어요.' : '지역별 보유 매물 수를 확인할 수 없어요.';
+  } catch {
+    if (!operation.signal.aborted) summary.textContent = '지역 목록을 불러오지 못했어요. 검색창에서 동네를 입력해 주세요.';
+  }
+}
 const initialStatus = Promise.all([readPublicationState(), login.initial]).then(() => {
   if (!confirmed && !pending && !active) showIdleStatus();
+  showSavedRegions();
 });
 
 function showBusy(busy) {
   form.setAttribute('aria-busy', String(busy));
   byId('submit').disabled = busy;
   byId('submitLabel').textContent = busy ? '확인 중' : initialSubmitLabel;
+}
+
+function mobilityNote(conditions) {
+  if (publicSavedListings && !signedIn && conditions?.maxCommuteMinutes != null) return '로그인하면 매물에서 목적지까지의 이동시간을 확인할 수 있어요.';
+  return searchInfo.mobility(conditions, walkingEnabled);
 }
 
 function money(value) {
@@ -278,7 +360,7 @@ function listingCard(room, conditions, unknown) {
   card.append(element('p', 'listing-breakdown', `보증금 ${money(room.deposit)} · 월세 ${money(room.rent)} · 관리비 ${money(room.fee)}`));
   let mappedDestinationId = destination?.id;
   let maps = validPoint(room) ? listingMaps(room, destination) : null;
-  card.append(listingWalk(room, conditions, cardLifetime.signal, place => {
+  if (canUseRoutes()) card.append(listingWalk(room, conditions, cardLifetime.signal, place => {
     if (!maps || place.id === mappedDestinationId) return;
     mappedDestinationId = place.id;
     const replacement = listingMaps(room, place);
@@ -286,6 +368,7 @@ function listingCard(room, conditions, unknown) {
     maps.replaceWith(replacement);
     maps = replacement;
   }));
+  else card.append(element('p','listing-meta','로그인하면 이동시간을 확인할 수 있어요.'));
   if (unknown && room.missingConditions?.length) card.append(element('p', 'listing-meta', '검색 당시 미확인 · ' + room.missingConditions.join(', ')));
   if (room.options?.length) card.append(element('p', 'listing-meta', room.options.join(' · ')));
   if (maps) card.append(maps);
@@ -336,26 +419,44 @@ async function loadListings(query, turn, conditions, destinationId) {
   const data = await request('/api/search', {query, confirmedConditions:conditions, ...(destinationId ? {destinationId} : {})}, active.signal);
   if (turn !== revision) return;
   const c = data.conditions;
-  const unverified = data.unverified.length;
+  lastSearch = {query, conditions, destinationId};
+  lastResults = data;
+  updateCollection();
   const summary = searchInfo.resultStatus(data, {includeRegionSummary:false});
   byId('results').dataset.state = summary.state;
-  const mobility = searchInfo.mobility(c, walkingEnabled);
+  const mobility = mobilityNote(c);
   resultStatus.textContent = [summary.text, mobility].filter(Boolean).join(' ');
   showConditions(c);
-  byId('cards').replaceChildren(...data.results.map(room => listingCard(room, c, false)));
-  byId('unknownCards').replaceChildren(...data.unverified.map(room => listingCard(room, c, true)));
-  byId('unknownTitle').hidden = !unverified;
+  paintListingCards(data);
   if (['ambiguous','unresolved'].includes(c.destinationStatus) || ['destination-ambiguous','destination-unverified'].includes(data.walking?.status)) {
     conversation.textContent = '도착할 곳을 주소로 확인해 주세요.';
-    destinationPicker(c, query, turn);
+    if (canUseRoutes()) destinationPicker(c, query, turn);
   }
 }
 
-function startRequest() {
+function paintListingCards(data) {
+  byId('cards').replaceChildren(...data.results.map(room => listingCard(room, data.conditions, false)));
+  byId('unknownCards').replaceChildren(...data.unverified.map(room => listingCard(room, data.conditions, true)));
+  byId('unknownTitle').hidden = !data.unverified.length;
+}
+
+async function refreshCollectionResults() {
+  if (!signedIn || !lastSearch || pending || active) return;
+  showSavedRegions();
+  const {query,conditions,destinationId} = lastSearch;
+  const turn = startRequest(true);
+  try { await loadListings(query, turn, conditions, destinationId); }
+  catch (error) { handleFailure(error, turn); }
+  finally { finishRequest(turn); }
+}
+
+function startRequest(keepSearch=false) {
+  if (!keepSearch) lastSearch = null;
   active?.abort();
   placeLookup?.abort();
   active = new AbortController();
   reset.hidden = false;
+  updateCollection();
   showBusy(true);
   return ++revision;
 }
@@ -363,6 +464,7 @@ function startRequest() {
 function finishRequest(turn) {
   if (turn !== revision) return;
   active = null;
+  updateCollection();
   showBusy(false);
 }
 
@@ -398,7 +500,7 @@ async function submitTurn(query, fresh=false) {
     if (input.value === draftAtSubmit) input.value = '';
     choices.replaceChildren();
     const info = searchInfo.interpretation(data.interpretation);
-    const mobility = searchInfo.mobility(data.conditions || data.pending?.conditions, walkingEnabled);
+    const mobility = mobilityNote(data.conditions || data.pending?.conditions);
     byId('interpretationNote').textContent = [info,mobility].filter(Boolean).join(' ');
     if (data.state === 'clarify') {
       pending = data.pending;
@@ -406,7 +508,7 @@ async function submitTurn(query, fresh=false) {
       queryBeforeClarification = originalQuery;
       offerClarification(data);
       if (data.kind === 'destination' && data.lookupQuery && !data.candidates?.length) {
-        if (canSearch()) destinationPicker(data.pending.conditions, originalQuery, turn, data.lookupQuery);
+        if (canUseRoutes()) destinationPicker(data.pending.conditions, originalQuery, turn, data.lookupQuery);
         else waitingSearch = {query:originalQuery, lookupQuery:data.lookupQuery};
       }
       input.focus({preventScroll:true});
@@ -445,6 +547,9 @@ function clearSearch() {
   active?.abort();
   placeLookup?.abort();
   active = null;
+  lastSearch = null;
+  lastResults = null;
+  updateCollection();
   confirmed = null;
   pending = null;
   pendingBase = null;

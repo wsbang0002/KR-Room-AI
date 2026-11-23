@@ -32,6 +32,7 @@ APIFY_MONTHLY_BUDGET_USD=10.00
 APIFY_SOFT_STOP_USD=9.00
 APIFY_MAX_COST_USD=0.51
 DATA_RIGHTS_REVIEWED=false
+PUBLIC_SAVED_LISTINGS=true
 ```
 
 Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**합니다. 키를 등록해도 이전 배포에는 자동 반영되지 않을 수 있습니다. 다른 프로젝트나 Preview에만 등록하지 않도록 확인하세요.
@@ -40,7 +41,7 @@ Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**�
 
 ## 3. 버튼 하나로 연결 검사
 
-비공개 매물을 검색하려면 홈 상단의 **로그인**을 누르고 기존 32자리 `ADMIN_API_KEY`를 입력하세요. 같은 화면에서 매물을 검색할 수 있습니다. **로그아웃**을 누르거나 1시간이 지나면 검색 세션이 끝납니다. [KNU Room AI 홈](https://kr-room-ai.vercel.app/)
+운영 사이트는 `PUBLIC_SAVED_LISTINGS=true`로 Redis와 기존 Apify Dataset의 매물을 로그인 전에도 검색할 수 있습니다. 저장소의 Vercel 설정은 `PUBLIC_SAVED_LISTINGS_PRODUCTION_HOST`로 이 공개 범위를 `kr-room-ai.vercel.app` 프로젝트의 Production 배포에 적용합니다. 다른 설치의 기본값은 비공개입니다. 재게시 권리 검토 설정인 `DATA_RIGHTS_REVIEWED`는 별도로 관리합니다. 홈 상단에서 기존 키로 **로그인**하면 수집할 조건을 확인하고 신규 매물 수집을 직접 요청할 수 있습니다. **로그아웃**을 누르거나 1시간이 지나면 검색 세션이 끝납니다. [KNU Room AI 홈](https://kr-room-ai.vercel.app/)
 
 외부 서비스 연결을 검사하려면 운영 콘솔에서 같은 키로 별도 로그인한 뒤 **서비스 연결 → 연결 검사**를 누릅니다. [운영 콘솔](https://kr-room-ai.vercel.app/admin)
 
@@ -55,7 +56,7 @@ Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**�
 
 배포 기준은 월 $10, 신규 수집 중단 $9입니다. 다른 환경에서는 월 예산을 $10 이하, 중단 기준을 $9 이하로 낮출 수 있습니다. 중단 기준은 월 예산 이하로 설정하세요. 앱은 계정 한도의 90%도 적용하므로 계정 한도가 $5인 경우 $4.50에서 신규 수집을 차단합니다. 한도 검사는 크레딧 잔액과 만료일을 제공하지 않습니다. 필요하면 Apify Console의 결제 내역에서 확인하세요.
 
-신규 Actor는 상세 매물을 최대 20건 요청하며, 1회 기본 예약액과 설정 상한은 $0.51입니다. 일일 예산 $1.00에서는 이 기본 예약을 UTC 하루에 한 번만 할 수 있습니다. 관리자별 일일 횟수 상한은 2회이며, 일일 비용 집계에는 첫 실행이 정산된 후에도 예약액이 반영됩니다.
+신규 Actor는 상세 매물을 최대 20건 요청하며, 1회 기본 예약액과 설정 상한은 $0.51입니다. Apify의 일일 수집 횟수와 비용 제한은 적용하지 않습니다. 이전 일일 설정값이 있어도 다음 실행 가능 여부는 월 예산·계정 한도·예약·잠금으로 결정됩니다.
 
 `ENABLE_LIVE_COLLECTION=false`로 연결을 검사하세요. 새 Actor를 시작하려면 별도로 계정 한도와 Redis 예약을 검증하고 수집을 활성화해야 합니다.
 
@@ -73,6 +74,6 @@ OSM 지도는 별도 키 없이 매물 위치를 표시합니다. 도보 시간�
 
 1. [OpenRouter 키 관리](https://openrouter.ai/settings/keys)에서 무료 계정의 API 키를 발급합니다. 결제 수단, 크레딧 충전, 외부 모델 제공자의 유료 키 연결은 필요하지 않습니다.
 2. Vercel 프로젝트의 **Settings → Environment Variables → Production**에 `AI_PROVIDER=openrouter-free`와 `OPENROUTER_API_KEY`를 등록합니다. 키는 Sensitive로 저장하고 재배포합니다.
-3. 운영 콘솔에서 **연결 검사**를 실행합니다. 고정 예문에서 서울 관악구와 월세 40만원을 모두 확인하면 검증 성공을 표시합니다. 재검사에서 캐시를 사용했는지도 표시합니다. 실제 매물은 홈에 로그인한 뒤 검색하세요.
+3. 운영 콘솔에서 **연결 검사**를 실행합니다. 고정 예문에서 서울 관악구와 월세 40만원을 모두 확인하면 검증 성공을 표시합니다. 재검사에서 캐시를 사용했는지도 표시합니다. 저장된 실매물은 홈에서 검색하고, 외부 AI를 이용한 조건 해석은 로그인 후 사용하세요.
 
-검색 문장은 서버에서 OpenRouter와 선택된 무료 모델 제공자에게 전송됩니다. 앱은 생성 전 OpenRouter 키 정보의 `is_free_tier`가 `true`인지 확인합니다. 무료 등급을 확인할 수 없으면 기본 파서를 사용합니다. 앱은 OpenRouter의 `inclusionai/ling-3.2-flash:free` 모델로만 텍스트 분석을 요청하고 가격 상한을 0으로 지정합니다. Redis로 앱의 OpenRouter 생성을 하루 20회로 제한합니다. 무료 모델 가용량, 공급자 한도, 5초 검색 대기 시간을 초과하면 로컬 파서가 조건을 해석합니다. [무료 모델 정책](https://openrouter.ai/docs/guides/routing/model-variants/free) · [호출 한도](https://openrouter.ai/docs/api/reference/limits)
+로그인 후 OpenRouter 분석을 사용하는 검색 문장은 서버에서 OpenRouter와 선택된 무료 모델 제공자에게 전송됩니다. 앱은 생성 전 OpenRouter 키 정보의 `is_free_tier`가 `true`인지 확인합니다. 무료 등급을 확인할 수 없으면 기본 파서를 사용합니다. 앱은 OpenRouter의 `inclusionai/ling-3.2-flash:free` 모델로만 텍스트 분석을 요청하고 가격 상한을 0으로 지정합니다. Redis로 앱의 OpenRouter 생성을 하루 20회로 제한합니다. 무료 모델 가용량, 공급자 한도, 5초 검색 대기 시간을 초과하면 로컬 파서가 조건을 해석합니다. [무료 모델 정책](https://openrouter.ai/docs/guides/routing/model-variants/free) · [호출 한도](https://openrouter.ai/docs/api/reference/limits)

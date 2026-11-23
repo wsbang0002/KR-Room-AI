@@ -36,6 +36,6 @@ TMAP Open API 약관은 저장 후 24시간이 지난 데이터의 사용을 금
 4. **승인된 운영 배포.** `vercel.json`의 `WALKING_ROUTES_PRODUCTION_HOST`는 `kr-room-ai.vercel.app`으로 지정한다. Vercel이 주입한 프로젝트 운영 도메인과 일치하는 Production 배포에만 이 설정을 적용한다. 환경변수 `ENABLE_WALKING_ROUTES`를 직접 설정하면 이 값이 우선한다. 미리보기와 로컬 배포에서는 기본적으로 꺼져 있다.
 5. **서비스 종료 또는 일시 중지.** 해당 프로젝트의 Production에서 `ENABLE_WALKING_ROUTES=false`, `ENABLE_TMAP_DIAGNOSTICS=false`를 설정하고 재배포한 뒤 `/api/status`의 `walking.enabled`를 확인한다. 매물 공개 및 Apify 유료 수집은 도보 설정과 독립적으로 관리한다.
 
-## 비로그인 도보 경로
+## 등록된 장소 사이의 도보 경로
 
-`GET /api/routes/walking?places=public`은 원주역 · 남춘천역 · 관악산역 · 신촌역(2호선) · 부산대역과 인근 대학을 반환한다. 역 좌표는 해당 지점의 한국어 위키백과 문서에서 확인한 대표 좌표며 각 항목에 출처 URL이 포함된다. 일반 방문자가 출발역과 캠퍼스를 선택하고 조회하면 서버는 두 ID를 검증한 뒤 TMAP에 좌표를 보낸다. 매물 ID·임의 좌표·다른 도시 조합은 이 경로에서 사용할 수 없다. 매물 추천과 같은 Redis 일일 카운터, 사용자별 제한, 동시 실행 제한을 적용한다.
+`GET /api/routes/walking?places=public`은 원주역 · 남춘천역 · 관악산역 · 신촌역(2호선) · 부산대역과 인근 대학을 반환한다. 역 좌표는 해당 지점의 한국어 위키백과 문서에서 확인한 대표 좌표며 각 항목에 출처 URL이 포함된다. 로그인한 이용자가 출발역과 캠퍼스를 선택하고 조회하면 서버는 두 ID를 검증한 뒤 TMAP에 좌표를 보낸다. 매물 ID·임의 좌표·다른 도시 조합은 이 경로에서 사용할 수 없다. 매물 추천과 같은 Redis 일일 카운터, 사용자별 제한, 동시 실행 제한을 적용한다.

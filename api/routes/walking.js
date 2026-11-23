@@ -4,13 +4,14 @@ import {listingOrigin} from '../../lib/core.js';
 import {getDestination} from '../../lib/destinations.js';
 import {withDatasetOrigin} from '../../lib/inventory.js';
 import {listingKey} from '../../lib/listing-store.js';
-import {admin,endpoint,HttpError,privateData} from '../../lib/security.js';
+import {admin,endpoint,HttpError,privateData,publicSavedListings,requireReader} from '../../lib/security.js';
 import {redis} from '../../lib/store.js';
 import {listingRouteSettings,unconfirmedRoute,validWalkingPoint,walkingRoute} from '../../lib/walking.js';
 
 const fields=new Set(['listingId','destinationId','diagnostic','confirmFreePlan','mode']);
 
 export async function handleWalking(body,{req,env=process.env,store,fetcher=fetch}={}){
+ if(publicSavedListings(env))requireReader(req,env);
  if(body&&Object.hasOwn(body,'publicOriginId'))return publicWalking(body,{req,env,store,fetcher});
  privateData(req,env);
  if(body?.diagnostic===true)admin(req,env);
@@ -52,6 +53,7 @@ export async function handleWalking(body,{req,env=process.env,store,fetcher=fetc
 // A route's string status is application data. Only the endpoint wrapper sets HTTP status.
 const calculate=endpoint('POST',async req=>({data:await handleWalking(req.body,{req})}));
 const places=endpoint('GET',req=>{
+ if(publicSavedListings())requireReader(req,process.env);
  if(req.query?.places!=='public')throw new HttpError(400,'공개 장소 목록을 선택해 주세요.');
  return publicWalkingPlaces();
 });

@@ -19,23 +19,19 @@ export class FakeRedis {
  eval(lua,keys,args){
  if(lua===RESERVE){const [value,limit,cost,budget,ttl]=args;const old=this.read(keys[0]);if(old)return old;const count=Number(this.read(keys[1])||0),spent=Number(this.read(keys[2])||0);if(count>=limit||spent+cost>budget)return 'LIMIT';this.write(keys[0],value,ttl);this.write(keys[1],String(count+1),172800);this.write(keys[2],String(spent+cost),172800);return 'RESERVED';}
  if(lua===MONTHLY_RESERVE||lua===INSPECT_MONTHLY){
-  const [countKey,dailyKey,ledger,activeKey,observedKey,jobKey,reservationKey]=keys;
-  const [countLimit,cost,dailyLimit,spent,stop,value,ttl,requestId,reservation]=args;
+  const [ledger,activeKey,observedKey,jobKey,reservationKey]=keys;
+  const [cost,spent,stop,value,ttl,requestId,reservation]=args;
   if(lua===MONTHLY_RESERVE&&this.read(jobKey)!=null)return this.read(jobKey);
   if(this.read(activeKey)!=null)return ['ACTIVE'];
-  const counts=[countKey,dailyKey,ledger,observedKey].map(key=>{
+  const counts=[ledger,observedKey].map(key=>{
    const raw=this.read(key)??'0';
    return /^(0|[1-9]\d*)$/.test(String(raw))?Number(raw):NaN;
   });
   if(!counts.every(Number.isSafeInteger))return ['INVALID_COUNTER'];
-  const [count,daily,reserved,priorObserved]=counts,observed=Math.max(priorObserved,spent);
-  if(count>=countLimit)return ['DAILY_COUNT_LIMIT',count];
-  if(daily+cost>dailyLimit)return ['DAILY_BUDGET_LIMIT',daily];
+  const [reserved,priorObserved]=counts,observed=Math.max(priorObserved,spent);
   if(observed+reserved+cost>stop)return ['MONTHLY_BUDGET_LIMIT',observed,reserved];
-  if(lua===INSPECT_MONTHLY)return ['AVAILABLE',count,daily];
+  if(lua===INSPECT_MONTHLY)return ['AVAILABLE',observed,reserved];
   this.write(jobKey,value,ttl);
-  this.write(countKey,String(count+1),172800);
-  this.write(dailyKey,String(daily+cost),172800);
   this.write(ledger,String(reserved+cost),ttl);
   this.write(activeKey,requestId,ttl);
   this.write(reservationKey,reservation,ttl);

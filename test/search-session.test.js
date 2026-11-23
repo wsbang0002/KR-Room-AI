@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import test from 'node:test';
 import session from '../api/session.js';
 import status from '../api/status.js';
 import collect from '../api/collect.js';
+import collectStatus from '../api/collect-status.js';
+import listings from '../api/listings.js';
+import integrations from '../api/integrations.js';
+import inspectRedis from '../api/redis-inspect.js';
+import {ACTOR_ID} from '../lib/collection.js';
 import {handleConditions} from '../api/conditions.js';
 import {handleSearch} from '../api/search.js';
 import {handleWalking} from '../api/routes/walking.js';
@@ -56,7 +61,9 @@ test('session login authenticates once and gives the browser a private one-hour 
  const headers={...sameOrigin,cookie:cookieHeader(issued)};
  assert.deepEqual((await call(session,'GET',headers)).body,login.body);
  assert.equal((await call(status,'GET',headers,{query:{scope:'admin'}})).code,401);
- assert.equal((await call(collect,'POST',headers,{body:{query:'원주시 원룸'}})).code,401);
+ assert.equal((await call(integrations,'POST',headers,{body:{service:'storage'}})).code,401);
+ assert.equal((await call(inspectRedis,'GET',headers)).code,401);
+ assert.equal((await call(collect,'POST',headers,{body:{}})).code,400);
  assert.equal((await call(session,'DELETE',{...headers,...foreign})).code,403);
  const logout=await call(session,'DELETE',headers);
  assert.equal(logout.code,200);
@@ -64,9 +71,10 @@ test('session login authenticates once and gives the browser a private one-hour 
  assert.deepEqual(logout.body,{authenticated:false});
  assert.ok(logout.headers['Set-Cookie'].includes('Max-Age=0'));
  assert.deepEqual((await call(session,'GET',{cookie:cookieHeader(logout.headers['Set-Cookie'])})).body,{authenticated:false});
+ assert.equal((await call(collect,'POST',{...sameOrigin,cookie:cookieHeader(logout.headers['Set-Cookie'])},{body:{}})).code,401);
 });
 
-test('inventories, confirmed searches, conditions, and destinations accept a read-only session',async()=>{
+test('inventories, confirmed searches, conditions, and destinations accept a homepage session',async()=>{
  const env={ADMIN_API_KEY:secret(),AI_PROVIDER:'openrouter-free',OPENROUTER_API_KEY:'mock-only',DATA_RIGHTS_REVIEWED:'false'};
  const req={headers:{cookie:cookieHeader(issueSearchSession(env).cookie)}};
  const region='강원특별자치도 원주시 무실동',query='원주시 무실동 원룸';
@@ -92,6 +100,69 @@ test('inventories, confirmed searches, conditions, and destinations accept a rea
  const anonymous={headers:{}};
  assert.deepEqual(await inventoryOverview(anonymous,options),{state:'private',regions:[]});
  await assert.rejects(handleSearch({query,confirmedConditions:conditions.conditions},{...options,req:anonymous}),{status:401});
+});
+
+test('only signed same-origin sessions or admin bearer credentials can start and resume a shared collection',async t=>{
+ const env={ADMIN_API_KEY:secret(),VERCEL:'1',PUBLIC_SAVED_LISTINGS:'true',DATA_RIGHTS_REVIEWED:'true',
+  ENABLE_LIVE_COLLECTION:'true',APIFY_TOKEN:'mock-apify',APIFY_MONTHLY_BUDGET_USD:'10',APIFY_SOFT_STOP_USD:'9',APIFY_MAX_COST_USD:'0.51',
+  UPSTASH_REDIS_REST_URL:'https://collection-session.invalid',UPSTASH_REDIS_REST_TOKEN:'mock-redis'};
+ for(const [name,value] of Object.entries(env)){
+  const before=process.env[name];process.env[name]=value;
+  t.after(()=>{if(before===undefined)delete process.env[name];else process.env[name]=before;});
+ }
+ const now=Date.now(),store=new FakeRedis(now);
+ const cycle={startAt:new Date(now-86_400_000),endAt:new Date(now+86_400_000)};
+ const calls=[];
+ const run={id:'mockCollection',actId:ACTOR_ID,defaultDatasetId:'mockDataset',usageTotalUsd:.12};
+ t.mock.method(globalThis,'fetch',async(url,init)=>{
+  const path=new URL(url).pathname;
+  calls.push({url,path,method:init.method||'GET'});
+  if(url===env.UPSTASH_REDIS_REST_URL)return Response.json({result:await store.command(JSON.parse(init.body))});
+  if(path==='/v2/users/me/limits')return Response.json({data:{
+   limits:{maxMonthlyUsageUsd:10},current:{monthlyUsageUsd:0},monthlyUsageCycle:cycle}});
+  if(path.includes('/acts/')&&init.method==='POST')return Response.json({data:{...run,status:'RUNNING'}});
+  if(path==='/v2/actor-runs/mockCollection')return Response.json({data:{...run,status:'SUCCEEDED'}});
+  if(path==='/v2/datasets/mockDataset/items')return Response.json([{id:'listing1',rent:32,address:'서울특별시 관악구 봉천동'}]);
+  assert.fail('unexpected external service in mock: '+path);
+ });
+ const sameOrigin={origin:'https://'+host,'sec-fetch-site':'same-origin'};
+ const cookie=cookieHeader(issueSearchSession(env).cookie);
+ const signed={...sameOrigin,cookie};
+ const expired=cookieHeader(issueSearchSession(env,now-7200_000).cookie);
+ const rotated=cookieHeader(issueSearchSession({...env,ADMIN_API_KEY:secret()}).cookie);
+ const invalid=cookie.slice(0,-1)+(cookie.endsWith('x')?'y':'x');
+ for(const denied of [{},{cookie:expired},{cookie:invalid},{cookie:rotated},
+   {...signed,origin:'https://unrelated.test'},{...signed,'sec-fetch-site':'same-site'},
+   {...signed,'sec-fetch-site':'cross-site'},{...signed,authorization:'Bearer invalid'},
+   {...signed,authorization:env.ADMIN_API_KEY}]){
+  assert.equal((await call(collect,'POST',denied,{body:{}})).code,401);
+  assert.equal((await call(collectStatus,'GET',denied)).code,401);
+  assert.equal((await call(listings,'GET',denied)).code,401);
+  assert.equal((await call(status,'GET',denied,{query:{scope:'collection-budget'}})).code,401);
+ }
+ assert.equal(calls.length,0);
+ const budget=await call(status,'GET',signed,{query:{scope:'collection-budget'}});
+ assert.equal(budget.code,200);assert.equal(budget.body.code,'AVAILABLE');
+ const adminHeaders={authorization:'Bearer '+env.ADMIN_API_KEY};
+ const query={body:{query:'서울 관악구 원룸'}};
+ const started=await Promise.all([call(collect,'POST',adminHeaders,query),call(collect,'POST',signed,query)]);
+ for(const reply of started)assert.equal(reply.code,202,JSON.stringify(reply.body));
+ const {jobId,requestId}=started[0].body;
+ assert.equal(started[1].body.jobId,jobId);assert.equal(started[1].body.requestId,requestId);
+ assert.equal(started.filter(reply=>reply.body.cached).length,1);
+ const legacyOwner=createHash('sha256').update(env.ADMIN_API_KEY).digest('hex').slice(0,20);
+ assert.equal((await store.get('knuroom:collect:'+jobId)).user,legacyOwner);
+ const active=await call(status,'GET',signed,{query:{scope:'collection-budget'}});
+ assert.equal(active.body.code,'ACTIVE');
+ const progress=await call(collectStatus,'GET',signed,{query:{jobId}});
+ assert.equal(progress.code,200);assert.equal(progress.body.persistedCount,1);
+ for(const access of [adminHeaders,signed]){
+  const result=await call(listings,'GET',access,{query:{jobId}});
+  assert.equal(result.code,200);
+  assert.deepEqual(result.body.items.map(item=>item.id),['listing1']);
+ }
+ assert.equal(calls.filter(call=>call.path.includes('/acts/')&&call.method==='POST').length,1);
+ assert.equal(calls.filter(call=>call.path.includes('/datasets/')).length,1);
 });
 
 test('expired, altered, cross-origin, or key-rotated session cookies cannot unlock searches',()=>{

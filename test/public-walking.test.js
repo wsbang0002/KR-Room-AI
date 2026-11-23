@@ -2,12 +2,37 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {handleWalking} from '../api/routes/walking.js';
 import {publicWalkingPlaces} from '../lib/public-walking.js';
+import {searchDestinations} from '../lib/destinations.js';
+import {statusData} from '../api/status.js';
 import {FINISH_WALK,RESERVE_WALK,walkingSettings} from '../lib/walking.js';
 
 const env={TMAP_APP_KEY:'mock-key',ENABLE_WALKING_ROUTES:'true',DATA_RIGHTS_REVIEWED:'false'};
 const req={headers:{},socket:{remoteAddress:'192.0.2.1'}};
 const trip={publicOriginId:'station-wonju',destinationId:'knu-wonju'};
 const unexpected=()=>assert.fail('this request must stay offline');
+
+test('the repository deployment opts in the named production site to guest inventory',()=>{
+ const config={PUBLIC_SAVED_LISTINGS:'true',PUBLIC_SAVED_LISTINGS_PRODUCTION_HOST:'kr-room-ai.vercel.app',
+  VERCEL_ENV:'production',VERCEL_PROJECT_PRODUCTION_URL:'kr-room-ai.vercel.app'};
+ assert.equal(statusData(config).publicSavedListings,true);
+ for(const change of [{VERCEL_ENV:'preview'},{VERCEL_PROJECT_PRODUCTION_URL:'another-site.vercel.app'}]){
+  assert.equal(statusData({...config,...change}).publicSavedListings,false);
+ }
+});
+
+test('guests in saved-listings mode can see inventory status but cannot request live routes or places',async()=>{
+ for(const reviewed of ['true','false']){
+  const config={...env,PUBLIC_SAVED_LISTINGS:'true',DATA_RIGHTS_REVIEWED:reviewed};
+  const settings=statusData(config);
+  assert.equal(settings.publicSavedListings,true);
+  assert.equal(settings.privateData,false);
+  const options={req,env:config,fetcher:unexpected};
+  for(const body of [trip,{listingId:'example',destinationId:'knu-wonju'}]){
+   await assert.rejects(handleWalking(body,options),{status:401});
+  }
+  await assert.rejects(searchDestinations({query:'원주역'},options),{status:401});
+ }
+});
 
 test('production walking approval applies only to the named Vercel production project and respects the off switch',()=>{
  const production={VERCEL:'1',VERCEL_ENV:'production',VERCEL_PROJECT_PRODUCTION_URL:'kr-room-ai.vercel.app',WALKING_ROUTES_PRODUCTION_HOST:'kr-room-ai.vercel.app'};

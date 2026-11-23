@@ -10,7 +10,7 @@ const env={
  ADMIN_API_KEY:'diagnostics-only-admin-credential',
  APIFY_TOKEN:'diagnostics-only-provider-credential',
  UPSTASH_REDIS_REST_URL:'https://redis.invalid',UPSTASH_REDIS_REST_TOKEN:'diagnostics-redis-secret',
- ENABLE_LIVE_COLLECTION:'true',APIFY_MAX_COST_USD:'0.51',APIFY_DAILY_BUDGET_USD:'1',COLLECTION_DAILY_LIMIT:'2',
+ ENABLE_LIVE_COLLECTION:'true',APIFY_MAX_COST_USD:'0.51',
  APIFY_MONTHLY_BUDGET_USD:'10',APIFY_SOFT_STOP_USD:'9'
 };
 const req={headers:{authorization:'Bearer '+env.ADMIN_API_KEY}};
@@ -42,21 +42,19 @@ function fixture({count=0,daily=0,reserved=0,observed=0,active=false,spent=.1523
 
 const cases=[
  ['AVAILABLE',{}],
- ['AVAILABLE',{count:1,daily:490000}],
- ['DAILY_BUDGET_LIMIT',{count:1,daily:500000}],
- ['DAILY_BUDGET_LIMIT',{count:1,daily:510000}],
- ['DAILY_COUNT_LIMIT',{count:2}],
+ ['AVAILABLE',{count:200,daily:10000000}],
  ['MONTHLY_BUDGET_LIMIT',{reserved:100000,observed:8400000}],
  ['MONTHLY_BUDGET_LIMIT',{spent:8.50}],
  ['ACTIVE',{active:true}]
 ];
 
-test('a per-run reservation larger than the daily cap needs a settings change even on a fresh day',async()=>{
- const {opts}=fixture();
- const result=await readCollectionBudget({...opts,env:{...env,APIFY_DAILY_BUDGET_USD:'0.40'}});
- assert.equal(result.code,'DAILY_BUDGET_LIMIT');
- assert.match(result.message,/\$0\.51.*\$0\.40.*설정/);
- assert.doesNotMatch(result.message,/09:00/);
+test('unused daily caps and previously stored daily counters do not restrict the reported monthly capacity',async()=>{
+ const {opts}=fixture({count:1000,daily:9000000});
+ const result=await readCollectionBudget({...opts,env:{...env,APIFY_DAILY_BUDGET_USD:'0.01',COLLECTION_DAILY_LIMIT:'0'}});
+ assert.equal(result.code,'AVAILABLE');
+ assert.match(result.message,/월.*\$9\.00.*\$0\.51/);
+ assert.doesNotMatch(result.message,/일일|09:00/);
+ assert.ok(!JSON.stringify(opts.store.calls).includes('knuroom:collect:'));
 });
 
 test('collection budget diagnosis identifies the limiting counter without starting an Actor or changing Redis data or TTLs',async()=>{
@@ -83,23 +81,17 @@ test('collection budget diagnosis identifies the limiting counter without starti
  }
 });
 
-test('the actual reservation still blocks the specific daily or monthly limit after an advisory read',async()=>{
+test('the actual reservation blocks a monthly limit after an advisory read',async()=>{
  const regions=buildConditions('서울 관악구 원룸',null);
- for(const [code,seed,reason] of [
-  ['DAILY_COUNT_LIMIT',{count:2},/DAILY_COUNT_LIMIT|횟수|건수|2회/],
-  ['DAILY_BUDGET_LIMIT',{count:1,daily:500000},/DAILY_BUDGET_LIMIT|(?:일일|일별|하루|당일|오늘).*?(?:금액|비용|예산|\$0\.5)/],
-  ['MONTHLY_BUDGET_LIMIT',{reserved:100000,observed:8400000},/MONTHLY_BUDGET_LIMIT|월간|월 관측|월 예산|월 한도/]
- ]){
-  const {opts,calls}=fixture(seed);
-  assert.equal((await readCollectionBudget(opts)).code,code);
-  await assert.rejects(startCollection(regions,opts),error=>{
-   assert.equal(error.status,429);
-   assert.match(error.message,/BUDGET_EXHAUSTED/);
-   assert.match(error.message,reason);
-   return true;
-  });
-  assert.deepEqual(calls,[[limitsUrl,'GET'],[limitsUrl,'GET']]);
- }
+ const {opts,calls}=fixture({reserved:100000,observed:8400000});
+ assert.equal((await readCollectionBudget(opts)).code,'MONTHLY_BUDGET_LIMIT');
+ await assert.rejects(startCollection(regions,opts),error=>{
+  assert.equal(error.status,429);
+  assert.equal(error.code,'MONTHLY_BUDGET_LIMIT');
+  assert.match(error.message,/BUDGET_EXHAUSTED/);
+  return true;
+ });
+ assert.deepEqual(calls,[[limitsUrl,'GET'],[limitsUrl,'GET']]);
 });
 
 test('an available diagnosis grants no reservation if a different collection starts before submission',async()=>{

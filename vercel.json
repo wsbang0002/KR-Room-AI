@@ -39,6 +39,8 @@
     }
   ],
   "env": {
+    "PUBLIC_SAVED_LISTINGS": "true",
+    "PUBLIC_SAVED_LISTINGS_PRODUCTION_HOST": "kr-room-ai.vercel.app",
     "APIFY_MONTHLY_BUDGET_USD": "10.00",
     "APIFY_SOFT_STOP_USD": "9.00",
     "APIFY_MAX_COST_USD": "0.51",

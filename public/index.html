@@ -13,6 +13,7 @@
   <script src="/search-info.js" defer></script>
   <script src="/search-login.js" defer></script>
   <script src="/listing-walk.js" defer></script>
+  <script src="/collect-region.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -41,7 +42,7 @@
   </header>
   <dialog class="login-dialog" id="login-dialog" aria-labelledby="login-title" aria-describedby="login-description">
     <h2 id="login-title">로그인</h2>
-    <p id="login-description">로그인 키를 입력하면 저장된 매물을 검색할 수 있어요.</p>
+    <p id="login-description">로그인하면 검색한 지역의 새 매물을 수집하고 이동시간을 확인할 수 있어요.</p>
     <form id="login-form" method="dialog">
       <label for="login-key">로그인 키</label>
       <input id="login-key" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" placeholder="32자리 키 입력" required autofocus aria-describedby="login-error">
@@ -105,9 +106,21 @@
         <div class="section-heading">
           <h2 id="resultsTitle">검색 결과</h2>
         </div>
+        <div id="savedBrowse" class="saved-browse" hidden>
+          <h3>저장 매물이 있는 지역</h3>
+          <p id="savedSummary" class="muted" role="status"></p>
+          <div id="savedRegions" class="choice-list"></div>
+        </div>
         <div class="result-state">
           <span class="result-symbol" aria-hidden="true"><i></i></span>
           <p id="status" role="status" aria-live="polite">원하는 조건을 입력하면 여기에서 매물을 비교할 수 있어요.</p>
+        </div>
+        <div id="collectionPanel" class="collection-panel" hidden>
+          <div class="collection-actions">
+            <button type="button" class="choice-button" id="collectRegion" disabled>선택 지역 매물 수집</button>
+            <button type="button" class="choice-button" id="stopCollection" hidden>상태 조회 중단</button>
+          </div>
+          <p id="collectionFeedback" class="muted" role="status"></p>
         </div>
         <div id="cards" class="listings"></div>
         <h3 id="unknownTitle" class="unknown-title" hidden>조건 확인이 필요한 매물</h3>
@@ -123,7 +136,7 @@
           </details>
           <details>
             <summary>월 총비용과 통학 시간은 어떻게 계산하나요?</summary>
-            <p>월 총비용은 월세와 관리비의 합이에요. 매물 카드에서 목적지를 정한 뒤 도보·자가용·버스 중 원하는 시간을 조회하세요. 이동 시간은 카드에 표시된 경로 제공자의 예상치예요. 버스는 정류장까지 걷는 구간을 포함해요. 출발점이나 캠퍼스 출입구에 따라 실제 시간은 달라질 수 있어요.</p>
+            <p>월 총비용은 월세와 관리비의 합이에요. 로그인한 뒤 매물 카드에서 목적지와 이동수단을 선택하면 도보·자가용·버스의 예상 시간을 조회할 수 있어요. 이동 시간은 카드에 표시된 경로 제공자의 예상치예요. 버스는 정류장까지 걷는 구간을 포함해요. 출발점이나 캠퍼스 출입구에 따라 실제 시간은 달라질 수 있어요.</p>
           </details>
         </div>
       </section>

@@ -39,6 +39,8 @@
     }
   ],
   "env": {
+    "APIFY_MONTHLY_BUDGET_USD": "10.00",
+    "APIFY_SOFT_STOP_USD": "9.00",
     "GEMINI_PRIMARY_MODEL": "gemini-3.6-flash",
     "WALKING_ROUTES_PRODUCTION_HOST": "kr-room-ai.vercel.app"
   }

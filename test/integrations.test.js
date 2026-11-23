@@ -8,7 +8,29 @@ const ok=data=>({ok:true,json:async()=>data});
 test('integration diagnostics require authentication before all service access',async()=>{let calls=0;await assert.rejects(checkIntegrations({}, {req:{headers:{}},env,fetcher:async()=>calls++}),e=>e.status===401);assert.equal(calls,0);});
 test('missing configuration is never reported as connected or called',async()=>{const r=await checkIntegrations({},{req,env:{ADMIN_API_KEY:env.ADMIN_API_KEY},fetcher:async()=>{throw Error('should not call');}});assert.equal(r.redis.status,'missing');assert.equal(r.apifyAccount.status,'missing');assert.equal(r.apifyDataset.status,'missing');assert.equal(r.actorStarted,false);});
 test('Redis PING/SCAN, account limits and Dataset are checked without running Actors',async()=>{const store=new FakeRedis();store.write('existing:key','private');const calls=[];const r=await checkIntegrations({},{req,env,store,fetcher:async(url,init)=>{calls.push({url,method:init.method||'GET'});if(url.endsWith('/limits'))return ok({data:{limits:{maxMonthlyUsageUsd:5},current:{monthlyUsageUsd:.15},monthlyUsageCycle:{startAt:new Date(Date.now()-86400000).toISOString(),endAt:new Date(Date.now()+86400000).toISOString()}}});return ok([]);}});assert.equal(r.redis.status,'verified');assert.equal(r.apifyAccount.hardLimitVerified,true);assert.equal(r.apifyDataset.sampleCount,0);assert.equal(r.actorStarted,false);assert.ok(calls.every(x=>x.method==='GET'&&!x.url.includes('/runs')));assert.equal(store.read('existing:key'),'private');assert.ok(!JSON.stringify(r).includes('existing:key'));assert.ok(!JSON.stringify(r).includes('fake-apify'));});
-test('account connection does not imply safe limit or monthly allowance',async()=>{const r=await checkIntegrations({},{req,env,store:new FakeRedis(),fetcher:async url=>url.endsWith('/limits')?ok({data:{limits:{maxMonthlyUsageUsd:10},current:{monthlyUsageUsd:4.6}}}):ok([])});assert.equal(r.apifyAccount.status,'verified');assert.equal(r.apifyAccount.hardLimitVerified,false);assert.equal(r.apifyAccount.billingCycleVerified,false);assert.equal(r.apifyAccount.belowSoftStop,false);});
+test('account connection does not imply safe limit or monthly allowance',async()=>{const r=await checkIntegrations({},{req,env,store:new FakeRedis(),fetcher:async url=>url.endsWith('/limits')?ok({data:{limits:{maxMonthlyUsageUsd:10.01},current:{monthlyUsageUsd:9.2}}}):ok([])});assert.equal(r.apifyAccount.status,'verified');assert.equal(r.apifyAccount.hardLimitVerified,false);assert.equal(r.apifyAccount.billingCycleVerified,false);assert.equal(r.apifyAccount.belowSoftStop,false);});
+test('account diagnostics distinguish the provider ceiling from the effective app soft stop',async()=>{
+ const cycle={startAt:new Date(Date.now()-86400000).toISOString(),endAt:new Date(Date.now()+86400000).toISOString()};
+ for(const [hard,spent,settings,below] of [
+  [10,.152325265,{},true],
+  [10,9,{},false],
+  [7,6.3,{},false],
+  [10,4.5,{APIFY_MONTHLY_BUDGET_USD:'5',APIFY_SOFT_STOP_USD:'4.50'},false],
+ ]){
+  const account={limits:{maxMonthlyUsageUsd:hard},current:{monthlyUsageUsd:spent},monthlyUsageCycle:cycle};
+  const result=await checkIntegrations({service:'storage'},{
+   req,env:{...env,...settings},store:new FakeRedis(),fetcher:async(url,init)=>{
+    assert.equal(init.method||'GET','GET');
+    return ok(url.endsWith('/users/me/limits')?{data:account}:[]);
+   }
+  });
+  assert.equal(result.apifyAccount.hardLimitUsd,hard);
+  assert.equal(result.apifyAccount.hardLimitVerified,true);
+  assert.equal(result.apifyAccount.billingCycleVerified,true);
+  assert.equal(result.apifyAccount.belowSoftStop,below);
+  assert.equal(result.actorStarted,false);
+ }
+});
 test('diagnostic failures redact secrets and do not use snapshot as proof',async()=>{const r=await checkIntegrations({},{req,env,store:{command:async()=>{throw Error('redis-token');}},fetcher:async()=>{throw Error('apify-token');}});assert.equal(r.redis.status,'failed');assert.equal(r.apifyDataset.status,'failed');assert.ok(!JSON.stringify(r).includes('-token'));});
 test('Gemini diagnostic respects Redis prerequisite and distinguishes live from cache',async()=>{const blocked=await checkIntegrations({service:'gemini'},{req,env:{...env,UPSTASH_REDIS_REST_TOKEN:''}});assert.equal(blocked.gemini.status,'blocked');const store=new FakeRedis();let count=0;const fetcher=async()=>{count++;return ok({candidates:[{content:{parts:[{text:'{"location":"서울특별시 관악구","maxRent":40}'}]}}]});};const a=await checkIntegrations({service:'gemini'},{req,env,store,fetcher});const b=await checkIntegrations({service:'gemini'},{req,env,store,fetcher});assert.equal(a.gemini.parser,'gemini');assert.equal(b.gemini.parser,'gemini-cache');assert.equal(count,1);});
 test('arbitrary services cannot be requested',async()=>{await assert.rejects(checkIntegrations({service:'runActor'},{req,env}),e=>e.status===400);});

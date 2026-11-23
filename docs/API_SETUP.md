@@ -28,8 +28,8 @@ UPSTASH_REDIS_REST_URL=기존_Upstash_REST_URL
 UPSTASH_REDIS_REST_TOKEN=기존_Upstash_REST_토큰
 ADMIN_API_KEY=직접_생성한_32자_이상_난수
 ENABLE_LIVE_COLLECTION=false
-APIFY_MONTHLY_BUDGET_USD=5.00
-APIFY_SOFT_STOP_USD=4.50
+APIFY_MONTHLY_BUDGET_USD=10.00
+APIFY_SOFT_STOP_USD=9.00
 APIFY_MAX_COST_USD=0.50
 DATA_RIGHTS_REVIEWED=false
 ```
@@ -47,13 +47,15 @@ Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**�
 **Gemini 3.5 Flash-Lite 비교 검사**를 누르면 경량 모델에 같은 예문을 보냅니다. 두 모델은 일일 생성 한도 20회를 공유하고 응답은 모델별로 캐시합니다. 일반 검색에서 3.6이 시간 초과나 503을 반환하면 기본 파서로 검색을 이어갑니다. Lite 모델 호출은 운영자가 비교 검사를 선택했을 때만 발생합니다.
 
 - Redis: PING과 SCAN만 수행합니다. 기존 키의 값과 이름은 결과 화면에 노출하지 않고 개수만 표시합니다. 기존 키를 삭제하지 않습니다.
-- Apify 계정: Limits API로 토큰·현재 사용량·계정 $5 이하 한도·과금 주기를 확인합니다. 한도 안전 여부와 인증 성공을 구분합니다.
+- Apify 계정 검사에서는 Limits API로 계정 한도, 사용량과 과금 주기를 조회합니다. 앱은 양수이면서 $10 이하인 계정 한도를 지원합니다. 조회 결과에서 인증 성공과 신규 수집 허용 여부를 각각 확인하세요.
 - Apify Dataset: 기존 Dataset에서 최대 1건을 읽어 접근 가능 여부를 확인합니다. 빈 Dataset도 연결 성공일 수 있습니다. 신규 Actor는 실행하지 않습니다.
 - Gemini: 고정된 짧은 검색 문장으로 실제 요청을 최대 1회 합니다. 기존 10분 캐시와 일일 20회 Redis 제한을 적용합니다. 응답 JSON 검증 성공·캐시·실패를 구분합니다. 토큰 사용료가 발생할 수 있습니다.
 
 검사는 서버리스 시간 제한에 맞춰 storage 검사와 Gemini 검사를 별도 HTTP 요청으로 순서대로 실행합니다. 공개 `GET /api/status`는 설정 존재 여부일 뿐 연결 성공 증거가 아닙니다. 새 검사 API인 `POST /api/integrations`는 관리자 Bearer 인증을 요구합니다.
 
-최종 수집 활성화는 Apify 계정 한도·영속 예약을 실제로 검증한 뒤 별도로 진행하세요. 이번 일괄 연결에서 `ENABLE_LIVE_COLLECTION=false`는 유지합니다.
+배포 기준은 월 $10, 신규 수집 중단 $9입니다. 다른 환경에서는 월 예산을 $10 이하, 중단 기준을 $9 이하로 낮출 수 있습니다. 중단 기준은 월 예산 이하로 설정하세요. 앱은 계정 한도의 90%도 적용하므로 계정 한도가 $5인 경우 $4.50에서 신규 수집을 차단합니다. 한도 검사는 크레딧 잔액과 만료일을 제공하지 않습니다. 필요하면 Apify Console의 결제 내역에서 확인하세요.
+
+`ENABLE_LIVE_COLLECTION=false`로 연결을 검사하세요. 새 Actor를 시작하려면 별도로 계정 한도와 Redis 예약을 검증하고 수집을 활성화해야 합니다.
 
 ## 4. 지도·경로의 범위
 

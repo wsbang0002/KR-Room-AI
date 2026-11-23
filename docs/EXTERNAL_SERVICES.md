@@ -34,4 +34,8 @@
 - https://docs.apify.com/api/v2/users-me-usage-monthly-get
 - https://docs.apify.com/api/v2/actor-run-get
 
-공식 Limits 응답의 `monthlyUsageCycle.startAt/endAt`, `limits.maxMonthlyUsageUsd`, `current.monthlyUsageUsd`와 Run 응답의 `usageTotalUsd`를 문서에서 확인했습니다. 신규 실행에는 Limits GET을 필수 적용합니다. 월 상세 API의 경로·필드도 검토했지만 추가 청구 집계 조회는 구현하지 않았습니다. 계정 설정을 바꾸는 PUT 요청은 없습니다. 운영 계정의 실제 $5 한도·사용량·과금 주기는 인증 GET으로 검증하기 전까지 미검증입니다.
+공식 Limits 응답의 `monthlyUsageCycle.startAt/endAt`, `limits.maxMonthlyUsageUsd`, `current.monthlyUsageUsd`와 Run 응답의 `usageTotalUsd`를 문서에서 확인했습니다. 신규 실행에는 Limits GET을 필수 적용합니다. 월 상세 API의 경로·필드도 검토했지만 추가 청구 집계 조회는 구현하지 않았습니다. 계정 설정을 바꾸는 PUT 요청은 없습니다. 계정별 한도·사용량·과금 주기는 해당 시점의 인증된 Limits 응답으로 확인합니다.
+
+### 현재 운영 예산
+
+배포 설정의 월 예산은 $10.00, 수집 중단 설정은 $9.00입니다. 앱은 실행 전에 확인한 계정 한도의 90%와 두 설정값 중 가장 작은 금액을 적용합니다. 계정 한도 $5에는 최대 $4.50이 적용됩니다. 계정 한도·월 예산은 사용 가능한 프로모션 크레딧이나 그 만료 시점을 나타내지 않습니다. Actor별 예약 상한은 $0.50이며, 계정 한도 검사는 읽기 요청만 사용합니다. [Apify 계정 한도 조회](https://docs.apify.com/api/v2/users-me-limits-get)

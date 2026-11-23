@@ -39,6 +39,7 @@
     }
   ],
   "env": {
+    "GEMINI_PRIMARY_MODEL": "gemini-3.6-flash",
     "WALKING_ROUTES_PRODUCTION_HOST": "kr-room-ai.vercel.app"
   }
 }

@@ -386,11 +386,11 @@ $('compareGemini').onclick=async()=>{
  controller=operation;
  const output=$('comparisonResult');
  output.hidden=false;
- busy(true);output.textContent='Gemini 3.6 Flash로 같은 예문을 확인하고 있어요.';
+ busy(true);output.textContent='Gemini 3.5 Flash-Lite로 같은 예문을 확인하고 있어요.';
  try{
-  const {gemini}=await post('/api/integrations',{service:'gemini',model:'gemini-3.6-flash'});
+  const {gemini}=await post('/api/integrations',{service:'gemini',model:'gemini-3.5-flash-lite'});
   if(operation.signal.aborted)return;
-  output.textContent=['Gemini 3.6 Flash',gemini.message,gemini.reason,gemini.timings?.google?.providerReason].filter(Boolean).join(' · ');
+  output.textContent=['Gemini 3.5 Flash-Lite',gemini.message,gemini.reason,gemini.timings?.google?.providerReason].filter(Boolean).join(' · ');
  }catch(error){
   if(!operation.signal.aborted)output.textContent=error.message;
  }finally{

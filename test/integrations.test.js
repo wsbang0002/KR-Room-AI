@@ -21,20 +21,21 @@ test('timings distinguish waiting for upstream headers from body parsing',async(
 test('Gemini 3 uses the condition schema and provider default temperature while preserving strict validation',async()=>{const r=await checkIntegrations({service:'gemini'},{req,env:{...env,GEMINI_MODEL:'gemini-3.8-flash'},store:new FakeRedis(),fetcher:async(url,init)=>{const config=JSON.parse(init.body).generationConfig;assert.equal(config.temperature,undefined);assert.equal(config.responseJsonSchema.properties.maxRent.type,'number');assert.equal(config.thinkingConfig.thinkingLevel,'low');return ok({candidates:[{content:{parts:[{text:'{"maxRent":"wrong-type"}'}]}}]});}});assert.equal(r.gemini.status,'failed');assert.equal(r.gemini.reason,'invalid-schema');});
 test('search starts reading saved listings before AI completes and rechecks changed regions',async()=>{const {saveListings}=await import('../lib/listing-store.js');const {handleSearch}=await import('../api/search.js');const store=new FakeRedis();await saveListings(store,[{id:'seoul',rent:30,maintenance_cost:50000,room_type:'원룸',address:'서울특별시 관악구 봉천동'}],'서울특별시 관악구');await saveListings(store,[{id:'busan',rent:30,maintenance_cost:50000,room_type:'원룸',address:'부산광역시 금정구 장전동'}],'부산광역시 금정구');let readStarted=false;const command=store.command.bind(store);store.command=async args=>{if(args[0]==='SCAN')readStarted=true;return command(args);};const result=await handleSearch({query:'서울 관악구 원룸'},{req,env,store,fetcher:async()=>{assert.equal(readStarted,true);return ok({candidates:[{content:{parts:[{text:'{"location":"부산광역시 금정구"}'}]}}]});}});assert.equal(result.data.conditions.location,'부산광역시 금정구');assert.equal(result.data.results[0].id,'busan');});
 
-test('3.6 comparison uses the production generation method and shares the request budget without changing the configured model',async()=>{
- const config={...env,GEMINI_MODEL:'gemini-3.8-flash'};
- const store=new FakeRedis(),models=[];
- const options={req,env:config,store,fetcher:async url=>{
-  models.push(new URL(url).pathname.split('/').pop());
+test('Flash-Lite comparison shares the primary budget and keeps its cached answers separate',async()=>{
+ const config={...env,GEMINI_MODEL:'gemini-3.8-flash',GEMINI_PRIMARY_MODEL:'gemini-3.6-flash'};
+ const store=new FakeRedis(),calls=[];
+ const options={req,env:config,store,fetcher:async(url,init)=>{
+  calls.push([new URL(url).pathname.split('/').pop(),JSON.parse(init.body).generationConfig.thinkingConfig.thinkingLevel]);
   return ok({candidates:[{content:{parts:[{text:'{"location":"서울 관악구","maxRent":40}'}]}}]});
  }};
- const compare={service:'gemini',model:'gemini-3.6-flash'};
+ const compare={service:'gemini',model:'gemini-3.5-flash-lite'};
  await assert.rejects(checkIntegrations(compare,{...options,req:{headers:{}}}),{status:401});
  await assert.rejects(checkIntegrations({...compare,model:'other'},options),{status:400});
  assert.equal((await checkIntegrations(compare,options)).gemini.parser,'gemini');
  assert.equal((await checkIntegrations(compare,options)).gemini.parser,'gemini-cache');
- assert.equal((await checkIntegrations({service:'gemini'},options)).gemini.model,'gemini-3.8-flash');
- assert.deepEqual(models,['gemini-3.6-flash:generateContent','gemini-3.8-flash:generateContent']);
+ assert.equal((await checkIntegrations({service:'gemini'},options)).gemini.model,'gemini-3.6-flash');
+ assert.deepEqual(calls.map(([endpoint])=>endpoint),['gemini-3.5-flash-lite:generateContent','gemini-3.6-flash:generateContent']);
+ assert.equal(calls[0][1],'minimal');
  assert.equal(Number(store.read('knuroom:gemini:budget')),2);
 });
 

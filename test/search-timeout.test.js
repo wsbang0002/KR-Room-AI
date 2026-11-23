@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleSearch} from '../api/search.js';
 import {checkIntegrations} from '../lib/integrations.js';
+import {readFileSync} from 'node:fs';
 import {FakeRedis} from '../test-support/fake-redis.js';
 
 test('search aborts Gemini at the search cap and returns local conditions, while the admin check can wait longer', async t => {
@@ -19,7 +20,7 @@ test('search aborts Gemini at the search cap and returns local conditions, while
     return AbortSignal.abort(new DOMException('Deadline reached', 'TimeoutError'));
   });
   const fetcher = async (url, {signal}) => {
-    assert.ok(url.endsWith(':generateContent'));
+    assert.ok(url.endsWith('/gemini-3.6-flash:generateContent'));
     signal.throwIfAborted();
     assert.fail('Expected an aborted generation request');
   };
@@ -40,7 +41,9 @@ test('search aborts Gemini at the search cap and returns local conditions, while
 test('signed-in search accepts a Gemini response after the previous five-second deadline', async () => {
   const {handleConditions} = await import('../api/conditions.js');
   const {issueSearchSession} = await import('../lib/search-session.js');
+  const deployment = JSON.parse(readFileSync(new URL('../vercel.json',import.meta.url),'utf8'));
   const env = {
+    ...deployment.env,
     ADMIN_API_KEY: 'mock-admin-key-for-local-tests-only',
     GEMINI_API_KEY: 'mock', GEMINI_MODEL: 'gemini-3.8-flash', AI_PROVIDER: 'gemini'
   };
@@ -50,6 +53,7 @@ test('signed-in search accepts a Gemini response after the previous five-second 
   const store = new FakeRedis();
   const fetcher = async (url, {signal}) => {
     calls++;
+    assert.ok(url.endsWith('/gemini-3.6-flash:generateContent'));
     await new Promise(resolve => setTimeout(resolve, 5100));
     signal.throwIfAborted();
     return Response.json({candidates: [{finishReason:'STOP', content: {parts: [

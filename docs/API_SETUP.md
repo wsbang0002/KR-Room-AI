@@ -21,7 +21,7 @@ Vercel → **kr-room-ai → Settings → Environment Variables**에서 아래 �
 
 ```dotenv
 GEMINI_API_KEY=확인한_Gemini_키
-GEMINI_MODEL=gemini-2.5-flash
+AI_PROVIDER=gemini
 APIFY_TOKEN=확인한_Apify_토큰
 APIFY_DATASET_ID=기존_Dataset_ID
 UPSTASH_REDIS_REST_URL=기존_Upstash_REST_URL
@@ -36,11 +36,15 @@ DATA_RIGHTS_REVIEWED=false
 
 Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**합니다. 키를 등록해도 이전 배포에는 자동 반영되지 않을 수 있습니다. 다른 프로젝트나 Preview에만 등록하지 않도록 확인하세요.
 
+일반 검색은 Gemini 3.6 Flash를 사용합니다. Vercel 배포에 사용할 모델은 저장소의 `vercel.json`에서 `env.GEMINI_PRIMARY_MODEL`로 지정합니다. 이 설정이 기존 `GEMINI_MODEL`보다 우선합니다. 운영 도메인의 `GET /api/status`에서 `analysisProvider`와 `geminiModel`을 확인할 수 있습니다.
+
 ## 3. 버튼 하나로 연결 검사
 
 비공개 매물을 검색하려면 홈 상단의 **로그인**을 누르고 기존 32자리 `ADMIN_API_KEY`를 입력하세요. 같은 화면에서 매물을 검색할 수 있습니다. **로그아웃**을 누르거나 1시간이 지나면 검색 세션이 끝납니다. [KNU Room AI 홈](https://kr-room-ai.vercel.app/)
 
 외부 서비스 연결을 검사하려면 운영 콘솔에서 같은 키로 별도 로그인한 뒤 **서비스 연결 → 연결 검사**를 누릅니다. [운영 콘솔](https://kr-room-ai.vercel.app/admin)
+
+**Gemini 3.5 Flash-Lite 비교 검사**를 누르면 경량 모델에 같은 예문을 보냅니다. 두 모델은 일일 생성 한도 20회를 공유하고 응답은 모델별로 캐시합니다. 일반 검색에서 3.6이 시간 초과나 503을 반환하면 기본 파서로 검색을 이어갑니다. Lite 모델 호출은 운영자가 비교 검사를 선택했을 때만 발생합니다.
 
 - Redis: PING과 SCAN만 수행합니다. 기존 키의 값과 이름은 결과 화면에 노출하지 않고 개수만 표시합니다. 기존 키를 삭제하지 않습니다.
 - Apify 계정: Limits API로 토큰·현재 사용량·계정 $5 이하 한도·과금 주기를 확인합니다. 한도 안전 여부와 인증 성공을 구분합니다.

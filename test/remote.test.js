@@ -14,3 +14,13 @@ test('fetch external Apify Dataset through token header and normalize prices',as
  const result=await loadListings({env:{APIFY_TOKEN:'secret',APIFY_DATASET_ID:'abc'},fetcher:async(url,init)=>{called=true;assert.match(url,/\/v2\/datasets\/abc\/items/);assert.equal(init.headers.Authorization,'Bearer secret');return {ok:true,json:async()=>raw};}});
  assert.equal(called,true);assert.equal(result.source,'apify-api');assert.equal(result.items[0].fee,5);
 });
+
+test('public status reports only safe model names from the active Gemini configuration',()=>{
+ const env={AI_PROVIDER:'gemini',GEMINI_PRIMARY_MODEL:'gemini-3.6-flash',GEMINI_MODEL:'gemini-3.8-flash'};
+ assert.equal(statusData(env).geminiModel,'gemini-3.6-flash');
+ assert.equal(statusData({...env,AI_PROVIDER:'openrouter-free'}).geminiModel,null);
+ const suspicious='private-invalid-model-value';
+ const status=statusData({...env,GEMINI_PRIMARY_MODEL:suspicious});
+ assert.equal(status.geminiModel,null);
+ assert.equal(JSON.stringify(status).includes(suspicious),false);
+});

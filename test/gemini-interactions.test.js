@@ -59,20 +59,21 @@ test('upstream capacity message is classified without copying provider details',
  assert.ok(!JSON.stringify(r).includes('private-test-id'));
 });
 
-test('admin can compare 3.6 Flash in an isolated model cache using one generation',async()=>{
+test('manual Interactions comparison honors the Lite choice even when deployment pins the primary',async()=>{
  const store=new FakeRedis();
  const calls=[];
- const options={req,env,store,fetcher:async(url,init)=>{
-  calls.push(JSON.parse(init.body).model);
+ const options={req,env:{...env,GEMINI_PRIMARY_MODEL:'gemini-3.6-flash'},store,fetcher:async(url,init)=>{
+  const {model,generation_config}=JSON.parse(init.body);
+  calls.push([model,generation_config.thinking_level]);
   return Response.json(completed('{"location":"서울특별시 관악구","maxRent":40}'));
  }};
  const check=model=>checkIntegrations({service:'gemini-interactions',model},options);
  await assert.rejects(check('unrestricted-model'),e=>e.status===400);
- await check();
- const result=await check('gemini-3.6-flash');
- assert.equal(result.gemini.model,'gemini-3.6-flash');
+ assert.equal((await check()).gemini.model,'gemini-3.6-flash');
+ const result=await check('gemini-3.5-flash-lite');
+ assert.equal(result.gemini.model,'gemini-3.5-flash-lite');
  assert.equal(result.gemini.parser,'gemini');
- assert.equal((await check('gemini-3.6-flash')).gemini.parser,'gemini-cache');
- assert.deepEqual(calls,['gemini-3.8-flash','gemini-3.6-flash']);
- assert.equal(env.GEMINI_MODEL,'gemini-3.8-flash');
+ assert.equal((await check('gemini-3.5-flash-lite')).gemini.parser,'gemini-cache');
+ assert.deepEqual(calls.map(([model])=>model),['gemini-3.6-flash','gemini-3.5-flash-lite']);
+ assert.equal(calls[1][1],'minimal');
 });

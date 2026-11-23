@@ -79,7 +79,11 @@
     <section class="panel" aria-labelledby="collectTitle">
       <h2 id="collectTitle">신규 매물 수집</h2>
       <p class="hint">선택한 지역의 매물을 한 번에 최대 20건 수집합니다. 수집에는 Apify 크레딧이 사용되며, 화면을 닫아도 시작한 작업은 계속될 수 있습니다.</p>
-      <button id="collect" type="button" disabled>Apify 수집 시작</button>
+      <div class="toolbar">
+        <button id="checkCollectionBudget" type="button" aria-controls="collectionBudgetResult" disabled>수집 한도 확인</button>
+        <button id="collect" type="button" disabled>Apify 수집 시작</button>
+      </div>
+      <p id="collectionBudgetResult" role="status" aria-atomic="true"></p>
     </section>
   </div>
 </main>

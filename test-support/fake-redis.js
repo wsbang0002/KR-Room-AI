@@ -1,4 +1,4 @@
-import {MONTHLY_RESERVE,SETTLE} from '../lib/monthly-budget.js';
+import {INSPECT_MONTHLY,MONTHLY_RESERVE,SETTLE} from '../lib/monthly-budget.js';
 import {RESERVE} from '../lib/store.js';
 export class FakeRedis {
  constructor(now=Date.now()){this.now=now;this.data=new Map();this.expires=new Map();this.calls=[];}
@@ -18,7 +18,30 @@ export class FakeRedis {
  }}
  eval(lua,keys,args){
  if(lua===RESERVE){const [value,limit,cost,budget,ttl]=args;const old=this.read(keys[0]);if(old)return old;const count=Number(this.read(keys[1])||0),spent=Number(this.read(keys[2])||0);if(count>=limit||spent+cost>budget)return 'LIMIT';this.write(keys[0],value,ttl);this.write(keys[1],String(count+1),172800);this.write(keys[2],String(spent+cost),172800);return 'RESERVED';}
- if(lua===MONTHLY_RESERVE){const [value,limit,cost,dailyLimit,ttl,spent,stop,requestId,reservationTtl,reservation]=args;const old=this.read(keys[0]);if(old)return old;if(this.read(keys[4]))return 'ACTIVE';const count=Number(this.read(keys[1])||0),daily=Number(this.read(keys[2])||0),reserved=Number(this.read(keys[3])||0),observed=Math.max(Number(this.read(keys[6])||0),spent);if(count>=limit||daily+cost>dailyLimit||observed+reserved+cost>stop)return 'LIMIT';this.write(keys[0],value,ttl);this.write(keys[1],String(count+1),172800);this.write(keys[2],String(daily+cost),172800);this.write(keys[3],String(reserved+cost),reservationTtl);this.write(keys[4],requestId,reservationTtl);this.write(keys[5],reservation,reservationTtl);this.write(keys[6],String(observed),reservationTtl);return 'RESERVED';}
+ if(lua===MONTHLY_RESERVE||lua===INSPECT_MONTHLY){
+  const [countKey,dailyKey,ledger,activeKey,observedKey,jobKey,reservationKey]=keys;
+  const [countLimit,cost,dailyLimit,spent,stop,value,ttl,requestId,reservation]=args;
+  if(lua===MONTHLY_RESERVE&&this.read(jobKey)!=null)return this.read(jobKey);
+  if(this.read(activeKey)!=null)return ['ACTIVE'];
+  const counts=[countKey,dailyKey,ledger,observedKey].map(key=>{
+   const raw=this.read(key)??'0';
+   return /^(0|[1-9]\d*)$/.test(String(raw))?Number(raw):NaN;
+  });
+  if(!counts.every(Number.isSafeInteger))return ['INVALID_COUNTER'];
+  const [count,daily,reserved,priorObserved]=counts,observed=Math.max(priorObserved,spent);
+  if(count>=countLimit)return ['DAILY_COUNT_LIMIT',count];
+  if(daily+cost>dailyLimit)return ['DAILY_BUDGET_LIMIT',daily];
+  if(observed+reserved+cost>stop)return ['MONTHLY_BUDGET_LIMIT',observed,reserved];
+  if(lua===INSPECT_MONTHLY)return ['AVAILABLE',count,daily];
+  this.write(jobKey,value,ttl);
+  this.write(countKey,String(count+1),172800);
+  this.write(dailyKey,String(daily+cost),172800);
+  this.write(ledger,String(reserved+cost),ttl);
+  this.write(activeKey,requestId,ttl);
+  this.write(reservationKey,reservation,ttl);
+  this.write(observedKey,String(observed),ttl);
+  return 'RESERVED';
+ }
  if(lua===SETTLE){const raw=this.read(keys[0]);if(!raw)return 'MISSING';const reservation=JSON.parse(raw);if(reservation.settled)return 'SETTLED';const refund=Math.max(0,reservation.costMicros-args[0]);this.data.set(keys[1],String(Number(this.read(keys[1])||0)-refund));reservation.actualMicros=args[0];reservation.settled=true;reservation.finishedAt=args[1];this.data.set(keys[0],JSON.stringify(reservation));if(this.read(keys[2])===reservation.requestId){this.data.delete(keys[2]);this.expires.delete(keys[2]);}return 'SETTLED';}
  // Listing UPSERT script. Keep its first-seen timestamp while updating prices.
  if(lua.includes('item.firstCollectedAt')){const prev=this.read(keys[0]);const item=JSON.parse(args[0]);if(prev)item.firstCollectedAt=JSON.parse(prev).firstCollectedAt||item.firstCollectedAt;this.write(keys[0],JSON.stringify(item));const index=this.read(keys[1])||new Set();index.add(keys[0]);this.write(keys[1],index);this.write(keys[2],args[1]);return 1;}

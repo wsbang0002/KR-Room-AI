@@ -23,7 +23,7 @@ function clearSession(){
  credential='';liveCollection=false;confirmed=null;pending=null;lastPayload=null;
  $('adminKey').value='';query.value='';destinationInput.value='';
  clearPlaces();
- for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
+ for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','collectionBudgetResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
  for(const id of ['map','endMap'])$(id).removeAttribute('src');
  for(const id of ['workspace','signOut','unknownTitle','mapPanel'])$(id).hidden=true;
  $('comparisonResult').hidden=true;
@@ -279,6 +279,7 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
 function busy(active){
  document.querySelectorAll('.route-diagnose').forEach(b=>{b.disabled=active||!credential;});
  $('checkConnections').disabled=active||!credential;
+ $('checkCollectionBudget').disabled=active||!credential;
  $('compareGemini').disabled=active||!credential;
  $('findDestinations').disabled=active||!credential;
  btn.disabled=active||!credential;$('cancel').disabled=!active;
@@ -325,6 +326,7 @@ async function submit(text=query.value.trim()){
 async function collect(){
  if(!lastPayload||!credential||pending)return;
  if(!window.confirm(confirmed.location+' 지역의 신규 매물 수집을 시작할까요? Actor 실행 시 비용이 발생할 수 있습니다.'))return;
+ $('collectionBudgetResult').replaceChildren();
  controller?.abort();controller=new AbortController();busy(true);try{
  const cfg=await request('/api/status');if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
  const job=await request('/api/collect',{method:'POST',body:JSON.stringify({query:lastPayload.query,confirmedConditions:confirmed})});const jobId=job.jobId;
@@ -338,6 +340,26 @@ async function collect(){
  }catch(e){status.textContent=e.name==='AbortError'?'화면 조회 취소. 이미 시작된 Actor는 Apify Console에서 확인하세요.':e.message;}finally{busy(false);}}
 $('searchForm').onsubmit=e=>{e.preventDefault();submit();};
 $('collect').onclick=collect;
+$('checkCollectionBudget').onclick=async()=>{
+ if(!credential||$('checkCollectionBudget').disabled)return;
+ controller?.abort();
+ const operation=new AbortController();
+ controller=operation;
+ const output=$('collectionBudgetResult');
+ busy(true);
+ output.textContent='Apify 수집 한도를 확인하고 있습니다…';
+ try{
+  const result=await request('/api/status?scope=collection-budget',{signal:operation.signal});
+  if(!operation.signal.aborted)output.textContent=result.message||'수집 한도를 확인할 수 없습니다.';
+ }catch(error){
+  if(!operation.signal.aborted)output.textContent=error.message;
+ }finally{
+  if(controller===operation){
+   if(operation.signal.aborted&&credential)output.textContent='수집 한도 조회를 취소했습니다.';
+   busy(false);
+  }
+ }
+};
 $('cancel').onclick=()=>controller?.abort();
 query.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&!e.isComposing){e.preventDefault();$('searchForm').requestSubmit();}

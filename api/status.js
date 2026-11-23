@@ -4,7 +4,7 @@ import {selectedProvider} from '../lib/gemini.js';
 import {primaryGeminiModel} from '../lib/gemini-model.js';
 import {apifyEnabled} from '../lib/apify.js';
 import {apifyBudgetSettings,apifyRunBudgetUsd} from '../lib/apify-budget.js';
-import {collectionReady,MAX_COLLECTION_RESULTS} from '../lib/collection.js';
+import {collectionReady,MAX_COLLECTION_RESULTS,readCollectionBudget} from '../lib/collection.js';
 import {admin,endpoint} from '../lib/security.js';
 export function statusData(env=process.env){
  const analysisProvider=selectedProvider(env);
@@ -27,6 +27,7 @@ export function statusData(env=process.env){
  };
 }
 export default endpoint('GET',req=>{
+ if(req.query?.scope==='collection-budget')return readCollectionBudget({req});
  if(req.query?.scope==='coverage')return inventoryOverview(req);
  if(req.query?.scope==='admin'){
   admin(req);

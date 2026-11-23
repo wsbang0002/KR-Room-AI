@@ -20,3 +20,34 @@ test('minimal Gemini probe sends only hello, shares rate limits and caches respo
 test('timings distinguish waiting for upstream headers from body parsing',async()=>{const {jsonFetch}=await import('../lib/security.js');const before={};await assert.rejects(jsonFetch('https://example.test',{timings:before,fetcher:async()=>{throw new DOMException('deadline','TimeoutError');}}));assert.equal(before.phase,'response-headers');assert.equal(before.headersMs,undefined);const after={};await assert.rejects(jsonFetch('https://example.test',{timings:after,fetcher:async()=>({ok:true,json:async()=>{throw new DOMException('deadline','TimeoutError');}})}));assert.equal(after.phase,'response-body');assert.equal(typeof after.headersMs,'number');});
 test('Gemini 3 uses the condition schema and provider default temperature while preserving strict validation',async()=>{const r=await checkIntegrations({service:'gemini'},{req,env:{...env,GEMINI_MODEL:'gemini-3.8-flash'},store:new FakeRedis(),fetcher:async(url,init)=>{const config=JSON.parse(init.body).generationConfig;assert.equal(config.temperature,undefined);assert.equal(config.responseJsonSchema.properties.maxRent.type,'number');assert.equal(config.thinkingConfig.thinkingLevel,'low');return ok({candidates:[{content:{parts:[{text:'{"maxRent":"wrong-type"}'}]}}]});}});assert.equal(r.gemini.status,'failed');assert.equal(r.gemini.reason,'invalid-schema');});
 test('search starts reading saved listings before AI completes and rechecks changed regions',async()=>{const {saveListings}=await import('../lib/listing-store.js');const {handleSearch}=await import('../api/search.js');const store=new FakeRedis();await saveListings(store,[{id:'seoul',rent:30,maintenance_cost:50000,room_type:'원룸',address:'서울특별시 관악구 봉천동'}],'서울특별시 관악구');await saveListings(store,[{id:'busan',rent:30,maintenance_cost:50000,room_type:'원룸',address:'부산광역시 금정구 장전동'}],'부산광역시 금정구');let readStarted=false;const command=store.command.bind(store);store.command=async args=>{if(args[0]==='SCAN')readStarted=true;return command(args);};const result=await handleSearch({query:'서울 관악구 원룸'},{req,env,store,fetcher:async()=>{assert.equal(readStarted,true);return ok({candidates:[{content:{parts:[{text:'{"location":"부산광역시 금정구"}'}]}}]});}});assert.equal(result.data.conditions.location,'부산광역시 금정구');assert.equal(result.data.results[0].id,'busan');});
+
+test('3.6 comparison uses the production generation method and shares the request budget without changing the configured model',async()=>{
+ const config={...env,GEMINI_MODEL:'gemini-3.8-flash'};
+ const store=new FakeRedis(),models=[];
+ const options={req,env:config,store,fetcher:async url=>{
+  models.push(new URL(url).pathname.split('/').pop());
+  return ok({candidates:[{content:{parts:[{text:'{"location":"서울 관악구","maxRent":40}'}]}}]});
+ }};
+ const compare={service:'gemini',model:'gemini-3.6-flash'};
+ await assert.rejects(checkIntegrations(compare,{...options,req:{headers:{}}}),{status:401});
+ await assert.rejects(checkIntegrations({...compare,model:'other'},options),{status:400});
+ assert.equal((await checkIntegrations(compare,options)).gemini.parser,'gemini');
+ assert.equal((await checkIntegrations(compare,options)).gemini.parser,'gemini-cache');
+ assert.equal((await checkIntegrations({service:'gemini'},options)).gemini.model,'gemini-3.8-flash');
+ assert.deepEqual(models,['gemini-3.6-flash:generateContent','gemini-3.8-flash:generateContent']);
+ assert.equal(Number(store.read('knuroom:gemini:budget')),2);
+});
+
+test('admin Gemini diagnostic describes each upstream failure and makes only one generation attempt',async()=>{
+ for(const [status,body,expected] of [
+  [503,{error:{message:'high demand'}},/서비스 장애.*혼잡/],
+  [502,{},/서비스 장애/],[504,{},/응답 지연/],[429,{},/공급자의 호출 한도/],
+  [200,{candidates:[{content:{parts:[{text:'{'}]}}]},/응답 형식 오류/]
+ ]){
+  let calls=0;
+  const result=await checkIntegrations({service:'gemini'},{req,env,store:new FakeRedis(),
+   fetcher:async()=>{calls++;return Response.json(body,{status});}});
+  assert.match(result.gemini.message,expected);
+  assert.equal(calls,1);
+ }
+});

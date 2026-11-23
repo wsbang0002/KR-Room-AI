@@ -23,9 +23,10 @@ function clearSession(){
  credential='';liveCollection=false;confirmed=null;pending=null;lastPayload=null;
  $('adminKey').value='';query.value='';destinationInput.value='';
  clearPlaces();
- for(const id of ['status','cards','unknownCards','conditions','integrationResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
+ for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
  for(const id of ['map','endMap'])$(id).removeAttribute('src');
  for(const id of ['workspace','signOut','unknownTitle','mapPanel'])$(id).hidden=true;
+ $('comparisonResult').hidden=true;
  $('loginPanel').hidden=false;
  busy(false);
 }
@@ -47,6 +48,7 @@ $('loginForm').onsubmit=async e=>{
   if(config.adminAuthenticated!==true)throw Error('로그인을 확인할 수 없습니다.');
   credential=key;input.value='';liveCollection=config.liveCollectionEnabled===true;
   $('loginMessage').textContent='';$('loginPanel').hidden=true;$('workspace').hidden=false;$('signOut').hidden=false;
+  $('compareGemini').hidden=config.analysisProvider!=='gemini'||!config.geminiConfigured;
   walkingEnabled=config.walking?.enabled===true&&config.walking?.keyConfigured===true;
   $('inventorySummary').textContent='보유 지역을 확인하고 있습니다…';
   coverageRequest?.abort();
@@ -277,6 +279,7 @@ function render(data){chips.replaceChildren();cards.replaceChildren();$('unknown
 function busy(active){
  document.querySelectorAll('.route-diagnose').forEach(b=>{b.disabled=active||!credential;});
  $('checkConnections').disabled=active||!credential;
+ $('compareGemini').disabled=active||!credential;
  $('findDestinations').disabled=active||!credential;
  btn.disabled=active||!credential;$('cancel').disabled=!active;
  $('collect').disabled=active||!liveCollection||!credential||!lastPayload||Boolean(pending);
@@ -374,4 +377,26 @@ $('checkConnections').onclick=async()=>{
   }
   output.textContent=renderChecks(results)+'\n신규 유료 Actor 실행: 없음';
  }catch(e){output.textContent+='\n'+(e.name==='AbortError'?'조회 취소':e.message);}finally{busy(false);}
+};
+
+$('compareGemini').onclick=async()=>{
+ if(!credential)return;
+ controller?.abort();
+ const operation=new AbortController();
+ controller=operation;
+ const output=$('comparisonResult');
+ output.hidden=false;
+ busy(true);output.textContent='Gemini 3.6 Flash로 같은 예문을 확인하고 있어요.';
+ try{
+  const {gemini}=await post('/api/integrations',{service:'gemini',model:'gemini-3.6-flash'});
+  if(operation.signal.aborted)return;
+  output.textContent=['Gemini 3.6 Flash',gemini.message,gemini.reason,gemini.timings?.google?.providerReason].filter(Boolean).join(' · ');
+ }catch(error){
+  if(!operation.signal.aborted)output.textContent=error.message;
+ }finally{
+  if(controller===operation){
+   if(operation.signal.aborted&&credential)output.textContent='비교 검사를 취소했습니다.';
+   busy(false);
+  }
+ }
 };

@@ -65,6 +65,7 @@ test('authenticated Gemini searches disclose only the classified fallback cause 
  const options={req,env:{AI_PROVIDER:'gemini',ADMIN_API_KEY:apiKey}};
  for(const [parserReason,detail,reason] of [
   ['upstream-http-503','model-capacity','capacity'],['upstream-http-503','unspecified','service-unavailable'],
+  ['upstream-http-502',null,'service-unavailable'],['upstream-http-504',null,'timeout'],
   ['upstream-timeout',null,'timeout'],['upstream-http-429',null,'provider-limit'],
   ['invalid-schema',null,'response-format'],['reservation-unavailable',null,'usage-check'],
   ['unrecognized private error','private detail','unavailable']

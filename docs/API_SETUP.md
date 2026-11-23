@@ -30,7 +30,7 @@ ADMIN_API_KEY=직접_생성한_32자_이상_난수
 ENABLE_LIVE_COLLECTION=false
 APIFY_MONTHLY_BUDGET_USD=10.00
 APIFY_SOFT_STOP_USD=9.00
-APIFY_MAX_COST_USD=0.50
+APIFY_MAX_COST_USD=0.51
 DATA_RIGHTS_REVIEWED=false
 ```
 
@@ -54,6 +54,8 @@ Production 환경에 적용하고 저장한 다음 **Deployments → Redeploy**�
 검사는 서버리스 시간 제한에 맞춰 storage 검사와 Gemini 검사를 별도 HTTP 요청으로 순서대로 실행합니다. 공개 `GET /api/status`는 설정 존재 여부일 뿐 연결 성공 증거가 아닙니다. 새 검사 API인 `POST /api/integrations`는 관리자 Bearer 인증을 요구합니다.
 
 배포 기준은 월 $10, 신규 수집 중단 $9입니다. 다른 환경에서는 월 예산을 $10 이하, 중단 기준을 $9 이하로 낮출 수 있습니다. 중단 기준은 월 예산 이하로 설정하세요. 앱은 계정 한도의 90%도 적용하므로 계정 한도가 $5인 경우 $4.50에서 신규 수집을 차단합니다. 한도 검사는 크레딧 잔액과 만료일을 제공하지 않습니다. 필요하면 Apify Console의 결제 내역에서 확인하세요.
+
+신규 Actor는 상세 매물을 최대 20건 요청하며, 1회 기본 예약액과 설정 상한은 $0.51입니다. 일일 예산 $1.00에서는 이 기본 예약을 UTC 하루에 한 번만 할 수 있습니다. 관리자별 일일 횟수 상한은 2회이며, 일일 비용 집계에는 첫 실행이 정산된 후에도 예약액이 반영됩니다.
 
 `ENABLE_LIVE_COLLECTION=false`로 연결을 검사하세요. 새 Actor를 시작하려면 별도로 계정 한도와 Redis 예약을 검증하고 수집을 활성화해야 합니다.
 

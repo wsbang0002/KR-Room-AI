@@ -329,7 +329,7 @@ async function collect(){
  const cfg=await request('/api/status');if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
  const job=await request('/api/collect',{method:'POST',body:JSON.stringify({query:lastPayload.query,confirmedConditions:confirmed})});const jobId=job.jobId;
  for(let i=0;i<90;i++){
- const current=await request(`/api/collect-status?jobId=${encodeURIComponent(jobId)}`);status.textContent=`수집 상태: ${current.state} · 최대 10건 · 취소해도 Actor 비용은 발생할 수 있습니다.`;
+ const current=await request(`/api/collect-status?jobId=${encodeURIComponent(jobId)}`);status.textContent=`수집 상태: ${current.state} · 최대 ${current.maxResults}건 · 취소해도 Actor 비용은 발생할 수 있습니다.`;
  if(current.state==='SUCCEEDED'){render(await request('/api/search',{method:'POST',body:JSON.stringify({...lastPayload,jobId})}));return;}
  if(['FAILED','ABORTED','TIMED-OUT','START_UNCONFIRMED'].includes(current.state))throw Error(`수집 종료: ${current.state}. 자동 재실행하지 않습니다.`);
  if(current.state==='RESERVED')throw Error('수집 시작 처리 중이거나 결과가 미확인입니다. 잠시 뒤 같은 조건으로 상태를 확인하세요.');

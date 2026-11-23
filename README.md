@@ -42,6 +42,7 @@ http://localhost:3000 에서 환경변수 없이 검색 조건을 입력하고 �
 | POST `/api/search` | `{query,confirmedConditions?,edits?,jobId?,destinationId?}` → 지역·조건·추천·미확인 후보 |
 | POST `/api/collect` | `{query,confirmedConditions?,edits?}` → 202, jobId/runId/state; 인증 필수 |
 | GET `/api/collect-status?jobId=...` | READY/RUNNING/SUCCEEDED/FAILED/ABORTED/TIMED-OUT 등 |
+| GET `/api/collect-status?active=1` | 로그인한 사용자의 미정산 수집을 찾아 상태 확인. 성공한 수집은 매물을 저장하고 확인된 비용을 정산 |
 | GET `/api/listings?jobId=...` | 성공 Dataset 정규화·중복 제거·원래 조건 추천 |
 | GET `/api/status?scope=coverage` | 제공 지역·건수·출처·갱신일 집계. 비공개 운영 중 로그인 전에는 공개 상태만 반환 |
 | GET `/api/status` | 설정 여부만; 실호출 성공 증명이 아님 |
@@ -129,7 +130,9 @@ npm.cmd run redis:restore -- backups/knuroom-backup.json
 
 ### Apify 월간 예산과 신규 수집 중단 기준
 
-운영 콘솔의 **신규 매물 수집 → 수집 한도 확인**에서 다음 1회 예약이 가능한지 조회할 수 있습니다. 이 조회는 Actor를 시작하거나 비용을 예약하지 않습니다.
+운영 콘솔의 **매물 수집 → 수집 한도 확인**에서 다음 1회 예약이 가능한지 조회할 수 있습니다. 이 조회는 Actor를 시작하거나 비용을 예약하지 않습니다.
+
+다른 수집이 진행 중이라는 안내가 보이면 **매물 수집 → 이전 수집 확인**을 누르세요. 새로고침 후에도 같은 키로 로그인하면 이전 지역이나 접수번호를 입력할 필요 없이 이어서 확인할 수 있습니다. 조회할 때는 새 Actor를 시작하지 않습니다. 성공하면 저장한 건수가 표시되고, 종료된 실행의 비용이 확인되면 다음 지역 수집이 가능합니다. 시작 결과나 실행 기록을 식별할 수 없는 경우 화면의 안내에 따라 Apify 실행 이력을 확인하세요.
 
 운영 배포는 월 예산 `APIFY_MONTHLY_BUDGET_USD=10.00`과 신규 수집 중단 기준 `APIFY_SOFT_STOP_USD=9.00`을 사용합니다. 신규 수집은 기본적으로 꺼져 있습니다. Apify 신규 수집의 일일 비용·횟수 제한은 폐지했습니다. 기존 `APIFY_DAILY_BUDGET_USD`와 `COLLECTION_DAILY_LIMIT` 값은 무시합니다. AI 및 경로 제공자의 호출 제한은 기능별 정책에 따릅니다.
 

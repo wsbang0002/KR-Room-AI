@@ -440,8 +440,8 @@ function paintListingCards(data) {
   byId('unknownTitle').hidden = !data.unverified.length;
 }
 
-async function refreshCollectionResults() {
-  if (!signedIn || !lastSearch || pending || active) return;
+async function refreshCollectionResults(location) {
+  if (!signedIn || !location || lastSearch?.conditions.location !== location || pending || active) return;
   showSavedRegions();
   const {query,conditions,destinationId} = lastSearch;
   const turn = startRequest(true);

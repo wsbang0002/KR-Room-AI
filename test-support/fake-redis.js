@@ -1,4 +1,5 @@
 import {INSPECT_MONTHLY,MONTHLY_RESERVE,SETTLE} from '../lib/monthly-budget.js';
+import {COMMIT_COLLECTION} from '../lib/collection.js';
 import {RESERVE} from '../lib/store.js';
 export class FakeRedis {
  constructor(now=Date.now()){this.now=now;this.data=new Map();this.expires=new Map();this.calls=[];}
@@ -38,9 +39,36 @@ export class FakeRedis {
   this.write(observedKey,String(observed),ttl);
   return 'RESERVED';
  }
- if(lua===SETTLE){const raw=this.read(keys[0]);if(!raw)return 'MISSING';const reservation=JSON.parse(raw);if(reservation.settled)return 'SETTLED';const refund=Math.max(0,reservation.costMicros-args[0]);this.data.set(keys[1],String(Number(this.read(keys[1])||0)-refund));reservation.actualMicros=args[0];reservation.settled=true;reservation.finishedAt=args[1];this.data.set(keys[0],JSON.stringify(reservation));if(this.read(keys[2])===reservation.requestId){this.data.delete(keys[2]);this.expires.delete(keys[2]);}return 'SETTLED';}
+ if(lua===COMMIT_COLLECTION){
+  if(this.read(keys[0])!==args[0])return 0;
+  this.data.set(keys[0],args[1]);
+  if(keys[1])this.write(keys[1],args[2],86400);
+  return 1;
+ }
+ if(lua===SETTLE){
+  if(this.read(keys[3])!==args[2])return 'CHANGED';
+  const raw=this.read(keys[0]);if(!raw)return 'MISSING';
+  const reservation=JSON.parse(raw);
+  if(reservation.requestId!==args[4]||reservation.ledger!==keys[1])return 'MISSING';
+  if(!reservation.settled){
+   const balance=this.read(keys[1]);
+   if(!/^[1-9]\d*$/.test(String(balance))||!Number.isSafeInteger(Number(balance))||
+      reservation.costMicros!==args[5]||Number(balance)<reservation.costMicros||args[0]>reservation.costMicros)return 'INVALID_LEDGER';
+   const refund=reservation.costMicros-args[0];
+   this.data.set(keys[1],String(Number(this.read(keys[1])||0)-refund));
+   reservation.actualMicros=args[0];reservation.settled=true;reservation.finishedAt=args[1];
+   this.data.set(keys[0],JSON.stringify(reservation));
+  }
+  this.write(keys[3],args[3],3600);
+  if(this.read(keys[2])===reservation.requestId){this.data.delete(keys[2]);this.expires.delete(keys[2]);}
+  return 'SETTLED';
+ }
+ if(lua.includes("redis.call('SET',KEYS[1],ARGV[2],'EX',ARGV[3])")){
+  if(this.read(keys[1])!==args[0])return 0;
+  this.write(keys[0],args[1],args[2]);return 1;
+ }
  // Listing UPSERT script. Keep its first-seen timestamp while updating prices.
- if(lua.includes('item.firstCollectedAt')){const prev=this.read(keys[0]);const item=JSON.parse(args[0]);if(prev)item.firstCollectedAt=JSON.parse(prev).firstCollectedAt||item.firstCollectedAt;this.write(keys[0],JSON.stringify(item));const index=this.read(keys[1])||new Set();index.add(keys[0]);this.write(keys[1],index);this.write(keys[2],args[1]);return 1;}
+ if(lua.includes('item.firstCollectedAt')){if(keys[3]&&this.read(keys[3])!==args[2])return 0;const prev=this.read(keys[0]);const item=JSON.parse(args[0]);if(prev)item.firstCollectedAt=JSON.parse(prev).firstCollectedAt||item.firstCollectedAt;this.write(keys[0],JSON.stringify(item));const index=this.read(keys[1])||new Set();index.add(keys[0]);this.write(keys[1],index);this.write(keys[2],args[1]);return 1;}
  throw Error('Unknown test Lua script');
  }
  async command(args){return this.raw(args);}

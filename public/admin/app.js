@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id);
 const query=$('query'),btn=$('submit'),status=$('status'),cards=$('cards'),chips=$('conditions');
 const fmt=n=>n==null?'미확인':`${Number(n).toLocaleString('ko-KR')}만 원`;
 let credential='',controller=null,liveCollection=false;
+let collectionOperation=null,collectionMayBeActive=false;
 let confirmed=null,pending=null,lastPayload=null,walkingEnabled=null,coverageRequest=null;
 function make(tag,cls,text){const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;}
 function chip(text){chips.append(make('span','chip',text));}
@@ -11,7 +12,11 @@ async function request(path,options={},key=credential){
   redirect:'error',cache:'no-store',credentials:'omit',
   headers:{'Content-Type':'application/json',Authorization:'Bearer '+key}});
  const data=await response.json();
- if(!response.ok)throw Error(data.error||'요청을 완료하지 못했습니다.');
+ if(!response.ok){
+  const error=new Error(data.error||'요청을 완료하지 못했습니다.');
+  error.status=response.status;
+  throw error;
+ }
  return data;
 }
 function post(path,body){return request(path,{method:'POST',body:JSON.stringify(body)});}
@@ -19,11 +24,14 @@ function clearSession(){
  controller?.abort();
  placeLookup?.abort();
  coverageRequest?.abort();
+ collectionOperation=null;collectionMayBeActive=false;
+ $('collectionRunLink').hidden=true;
+ $('collectionRunLink').href='https://console.apify.com/actors/runs';
  walkingEnabled=null;
  credential='';liveCollection=false;confirmed=null;pending=null;lastPayload=null;
  $('adminKey').value='';query.value='';destinationInput.value='';
  clearPlaces();
- for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','collectionBudgetResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
+ for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','collectionBudgetResult','collectionProgress','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
  for(const id of ['map','endMap'])$(id).removeAttribute('src');
  for(const id of ['workspace','signOut','unknownTitle','mapPanel'])$(id).hidden=true;
  $('comparisonResult').hidden=true;
@@ -280,10 +288,12 @@ function busy(active){
  document.querySelectorAll('.route-diagnose').forEach(b=>{b.disabled=active||!credential;});
  $('checkConnections').disabled=active||!credential;
  $('checkCollectionBudget').disabled=active||!credential;
+ $('recoverCollection').disabled=active||!credential;
+ $('stopCollectionView').hidden=!active||collectionOperation!==controller;
  $('compareGemini').disabled=active||!credential;
  $('findDestinations').disabled=active||!credential;
  btn.disabled=active||!credential;$('cancel').disabled=!active;
- $('collect').disabled=active||!liveCollection||!credential||!lastPayload||Boolean(pending);
+ $('collect').disabled=active||!liveCollection||!credential||!lastPayload||Boolean(pending)||collectionMayBeActive;
 }
 async function submit(text=query.value.trim()){
  if(!credential||!text)return;
@@ -323,23 +333,129 @@ async function submit(text=query.value.trim()){
  }catch(error){if(controller===operation)status.textContent=error.name==='AbortError'?'검색을 취소했습니다.':error.message;}
  finally{if(controller===operation)busy(false);}
 }
+const terminalStates=new Set(['SUCCEEDED','FAILED','ABORTED','TIMED-OUT']);
+const collectionStates={
+ READY:'실행 대기',RUNNING:'수집 진행 중',ABORTING:'중단 처리 중','TIMING-OUT':'시간 초과 처리 중',
+ SUCCEEDED:'수집 완료',FAILED:'수집 실패',ABORTED:'수집 중단','TIMED-OUT':'시간 초과',
+ RESERVED:'시작 예약됨',START_UNCONFIRMED:'시작 결과 미확인'
+};
+const recoveryHint='‘이전 수집 확인’으로 상태를 다시 확인하세요.';
+function displayCollection(current){
+ const terminal=terminalStates.has(current.state);
+ collectionMayBeActive=current.state!=='IDLE'&&!(terminal&&current.costSettled===true);
+ const runLink=$('collectionRunLink');
+ runLink.hidden=!current.runId&&!['UNIDENTIFIED','START_UNCONFIRMED','RESERVED'].includes(current.state);
+ runLink.href='https://console.apify.com/actors/runs'+(current.runId?'/'+encodeURIComponent(current.runId):'');
+ const parts=[];
+ if(current.conditions?.location)parts.push(current.conditions.location);
+ switch(current.state){
+  case 'IDLE':
+   parts.push('진행 중이거나 정산을 기다리는 수집이 없습니다.');
+   break;
+  case 'UNIDENTIFIED':
+   parts.push('기존 예약의 실행을 식별할 수 없습니다. 신규 수집은 잠겨 있습니다. Apify 실행 이력을 확인하세요.');
+   break;
+  default:
+   parts.push(collectionStates[current.state]||'수집 상태 미확인');
+   if(terminal){
+    if(current.state==='SUCCEEDED'&&Number.isInteger(current.persistedCount))parts.push('저장 '+current.persistedCount+'건');
+    if(current.settlementIssue==='COST_EXCEEDS_RESERVATION'){
+     parts.push('실행 비용이 예약액을 초과해 신규 수집을 보류했습니다. Apify 실행 이력에서 비용을 확인하세요.');
+    }else if(current.settlementIssue==='INVALID_LEDGER'){
+     parts.push('앱의 월 예산 기록과 이번 예약액이 일치하지 않아 신규 수집을 보류했습니다. 예산 기록을 확인하세요.');
+    }else{
+     parts.push(current.costSettled===true?'비용 정산 완료':'비용 정산 대기 중. '+recoveryHint);
+    }
+   }else if(['START_UNCONFIRMED','RESERVED'].includes(current.state)){
+    if(!current.runId&&current.createdAt&&Number.isFinite(Date.parse(current.createdAt))){
+     parts.push('수집 요청 시각 '+checkedAt(current.createdAt));
+    }
+    parts.push('실행 여부가 아직 확인되지 않았습니다. '+recoveryHint);
+   }else if(Number.isInteger(current.maxResults)){
+    parts.push('최대 '+current.maxResults+'건');
+   }
+ }
+ $('collectionProgress').textContent=parts.join(' · ');
+}
+function beginCollectionView(){
+ controller?.abort();
+ collectionOperation=new AbortController();
+ controller=collectionOperation;
+ $('collectionRunLink').hidden=true;
+ busy(true);
+ return collectionOperation;
+}
+function finishCollectionView(operation){
+ if(collectionOperation===operation)collectionOperation=null;
+ if(controller===operation)busy(false);
+}
+function stoppedCollection(operation){
+ if(controller!==operation||!credential)return true;
+ if(!operation.signal.aborted)return false;
+ $('collectionProgress').textContent='화면 조회를 중단했습니다. 이미 시작된 Actor는 계속 실행될 수 있습니다. '+recoveryHint;
+ return true;
+}
+async function recoverCollection(){
+ if(!credential||$('recoverCollection').disabled)return;
+ const operation=beginCollectionView();
+ $('collectionProgress').textContent='서버에 남아 있는 수집을 확인하고 있습니다…';
+ try{
+  const current=await request('/api/collect-status?active=1',{signal:operation.signal});
+  if(!stoppedCollection(operation))displayCollection(current);
+ }catch(error){
+  if(!stoppedCollection(operation))$('collectionProgress').textContent='이전 수집을 확인할 수 없습니다. '+error.message;
+ }finally{finishCollectionView(operation);}
+}
+function waitForCollection(signal){
+ return new Promise((resolve,reject)=>{
+  if(signal.aborted){reject(new DOMException('취소','AbortError'));return;}
+  const abort=()=>{clearTimeout(timer);reject(new DOMException('취소','AbortError'));};
+  const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},3000);
+  signal.addEventListener('abort',abort,{once:true});
+ });
+}
 async function collect(){
- if(!lastPayload||!credential||pending)return;
+ if(!lastPayload||!credential||pending||$('collect').disabled)return;
  if(!window.confirm(confirmed.location+' 지역의 신규 매물 수집을 시작할까요? Actor 실행 시 비용이 발생할 수 있습니다.'))return;
+ const operation=beginCollectionView();
+ const searchPayload=lastPayload;
+ let startAttempted=false,jobAccepted=false;
+ const output=$('collectionProgress');
  $('collectionBudgetResult').replaceChildren();
- controller?.abort();controller=new AbortController();busy(true);try{
- const cfg=await request('/api/status');if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
- const job=await request('/api/collect',{method:'POST',body:JSON.stringify({query:lastPayload.query,confirmedConditions:confirmed})});const jobId=job.jobId;
- for(let i=0;i<90;i++){
- const current=await request(`/api/collect-status?jobId=${encodeURIComponent(jobId)}`);status.textContent=`수집 상태: ${current.state} · 최대 ${current.maxResults}건 · 취소해도 Actor 비용은 발생할 수 있습니다.`;
- if(current.state==='SUCCEEDED'){render(await request('/api/search',{method:'POST',body:JSON.stringify({...lastPayload,jobId})}));return;}
- if(['FAILED','ABORTED','TIMED-OUT','START_UNCONFIRMED'].includes(current.state))throw Error(`수집 종료: ${current.state}. 자동 재실행하지 않습니다.`);
- if(current.state==='RESERVED')throw Error('수집 시작 처리 중이거나 결과가 미확인입니다. 잠시 뒤 같은 조건으로 상태를 확인하세요.');
- await new Promise((resolve,reject)=>{const signal=controller.signal;const abort=()=>{clearTimeout(timer);reject(new DOMException('취소','AbortError'));};const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},3000);signal.addEventListener('abort',abort,{once:true});});
- }throw Error('조회 대기 종료. 같은 조건으로 수집을 누르면 기존 실행을 확인합니다.');
- }catch(e){status.textContent=e.name==='AbortError'?'화면 조회 취소. 이미 시작된 Actor는 Apify Console에서 확인하세요.':e.message;}finally{busy(false);}}
+ output.textContent='수집 시작 가능 여부를 확인하고 있습니다…';
+ try{
+  const cfg=await request('/api/status',{signal:operation.signal});
+  if(stoppedCollection(operation))return;
+  if(!cfg.liveCollectionEnabled)throw Error('신규 유료 수집이 잠겨 있습니다. 서버의 비용 보호·인증 설정이 필요합니다.');
+  startAttempted=true;
+  collectionMayBeActive=true;
+  const job=await request('/api/collect',{method:'POST',body:JSON.stringify({query:searchPayload.query,confirmedConditions:confirmed}),signal:operation.signal});
+  jobAccepted=true;
+  for(let i=0;i<90;i++){
+   if(stoppedCollection(operation))return;
+   const current=await request('/api/collect-status?jobId='+encodeURIComponent(job.jobId),{signal:operation.signal});
+   if(stoppedCollection(operation))return;
+   displayCollection(current);
+   if(current.state==='SUCCEEDED'){
+    const results=await request('/api/search',{method:'POST',body:JSON.stringify({...searchPayload,jobId:job.jobId}),signal:operation.signal});
+    if(!stoppedCollection(operation))render(results);
+    return;
+   }
+   if(terminalStates.has(current.state)||['RESERVED','START_UNCONFIRMED'].includes(current.state))return;
+   await waitForCollection(operation.signal);
+  }
+  output.textContent+=' · 상태 조회 대기 시간이 끝났습니다. '+recoveryHint;
+ }catch(error){
+  if(stoppedCollection(operation))return;
+  // A definite refusal before launch does not require recovery; a lost response may.
+  if(startAttempted&&!jobAccepted&&error.status>=400&&error.status<500&&error.status!==409)collectionMayBeActive=false;
+  output.textContent=error.message+(startAttempted&&collectionMayBeActive?' '+recoveryHint:'');
+ }finally{finishCollectionView(operation);}
+}
 $('searchForm').onsubmit=e=>{e.preventDefault();submit();};
 $('collect').onclick=collect;
+$('recoverCollection').onclick=recoverCollection;
+$('stopCollectionView').onclick=()=>collectionOperation?.abort();
 $('checkCollectionBudget').onclick=async()=>{
  if(!credential||$('checkCollectionBudget').disabled)return;
  controller?.abort();
@@ -350,7 +466,10 @@ $('checkCollectionBudget').onclick=async()=>{
  output.textContent='Apify 수집 한도를 확인하고 있습니다…';
  try{
   const result=await request('/api/status?scope=collection-budget',{signal:operation.signal});
-  if(!operation.signal.aborted)output.textContent=result.message||'수집 한도를 확인할 수 없습니다.';
+  if(!operation.signal.aborted){
+   if(result.code==='ACTIVE')collectionMayBeActive=true;
+   output.textContent=(result.message||'수집 한도를 확인할 수 없습니다.')+(result.code==='ACTIVE'?' '+recoveryHint:'');
+  }
  }catch(error){
   if(!operation.signal.aborted)output.textContent=error.message;
  }finally{

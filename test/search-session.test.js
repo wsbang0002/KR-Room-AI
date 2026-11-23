@@ -137,6 +137,7 @@ test('only signed same-origin sessions or admin bearer credentials can start and
    {...signed,authorization:env.ADMIN_API_KEY}]){
   assert.equal((await call(collect,'POST',denied,{body:{}})).code,401);
   assert.equal((await call(collectStatus,'GET',denied)).code,401);
+  assert.equal((await call(collectStatus,'GET',denied,{query:{active:'1'}})).code,401);
   assert.equal((await call(listings,'GET',denied)).code,401);
   assert.equal((await call(status,'GET',denied,{query:{scope:'collection-budget'}})).code,401);
  }
@@ -154,8 +155,12 @@ test('only signed same-origin sessions or admin bearer credentials can start and
  assert.equal((await store.get('knuroom:collect:'+jobId)).user,legacyOwner);
  const active=await call(status,'GET',signed,{query:{scope:'collection-budget'}});
  assert.equal(active.body.code,'ACTIVE');
- const progress=await call(collectStatus,'GET',signed,{query:{jobId}});
+ // A fresh page only has its login cookie. Resume the old run without a receipt or search.
+ const progress=await call(collectStatus,'GET',signed,{query:{active:'1'}});
  assert.equal(progress.code,200);assert.equal(progress.body.persistedCount,1);
+ assert.equal(progress.body.jobId,jobId);
+ assert.equal(progress.body.costSettled,true);
+ assert.deepEqual((await call(collectStatus,'GET',adminHeaders,{query:{active:'1'}})).body,{state:'IDLE'});
  for(const access of [adminHeaders,signed]){
   const result=await call(listings,'GET',access,{query:{jobId}});
   assert.equal(result.code,200);

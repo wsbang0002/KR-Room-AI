@@ -90,3 +90,6 @@ iframe { border: 0; width: 100%; height: 230px; margin-block-start: 8px; }
   .area { display: none; }
   .panel { border-radius: 9px; }
 }
+#collectionProgress { overflow-wrap: anywhere; }
+#collectionProgress:not(:empty) { padding: 11px 13px; border-inline-start: 3px solid var(--action); background: var(--field); }
+#collectionProgress:empty, #collectionBudgetResult:empty { display: none; }

@@ -65,12 +65,6 @@
       <section id="search" class="composer" tabindex="-1" aria-labelledby="queryLabel">
         <div class="composer-head">
           <h2><label for="query" id="queryLabel">어떤 방을 찾으세요?</label></h2>
-          <button class="reset" id="resetSearch" type="button" hidden>조건 초기화</button>
-        </div>
-        <div id="serviceScope" class="service-scope" role="status" aria-live="polite">
-          <span id="publicationState">매물 공개 상태 확인 중</span>
-          <span id="walkingState">도보 경로 상태 확인 중</span>
-          <span id="coverageSummary" hidden></span>
         </div>
         <form id="searchForm">
           <div class="query-box">
@@ -85,6 +79,7 @@
           <button type="button" data-query="원주시 무실동에서 관리비 포함 월 50만 원 이하인 원룸 찾아줘">무실동 월 50만 원 이하</button>
           <button type="button" data-query="강원대 원주캠퍼스까지 걸어서 15분 이내인 원룸 찾아줘">캠퍼스 도보 15분</button>
         </div>
+          <button class="reset" id="resetSearch" type="button" hidden>조건 초기화</button>
         <div id="conditions" class="condition-list" aria-label="적용한 검색 조건"></div>
         <p id="conversation" class="conversation" role="status" aria-live="polite"></p>
         <p id="interpretationNote" class="interpretation-note"></p>

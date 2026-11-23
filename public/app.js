@@ -24,7 +24,6 @@ let cardLifetime = new AbortController();
 let inventoryPublic = null;
 let signedIn = false;
 let waitingSearch = null;
-let coverageRequest = null;
 let walkingEnabled = null;
 let routeInitialized = false;
 
@@ -73,54 +72,18 @@ function showIdleStatus() {
     inventoryPublic === false ? signInPrompt : '지금은 매물 공개 상태를 확인할 수 없어요.';
 }
 
-function showAccess() {
-  byId('publicationState').textContent = signedIn ? '로그인됨 · 수집된 매물을 검색할 수 있어요.' :
-    inventoryPublic === true ? '수집된 지역의 매물을 검색할 수 있어요.' :
-    inventoryPublic === false ? '로그인하면 수집된 매물을 검색할 수 있어요.' : '매물 공개 상태 미확인';
-  if (canSearch()) {
-    if (!coverageRequest) showInventory();
-  } else {
-    coverageRequest?.abort();
-    coverageRequest = null;
-    byId('coverageSummary').replaceChildren();
-    byId('coverageSummary').hidden = true;
-  }
-}
-
 async function readPublicationState() {
   try {
     const data = await request('/api/status');
     inventoryPublic = typeof data.privateData === 'boolean' ? !data.privateData : null;
     walkingEnabled = data.walking?.enabled === true && data.walking?.keyConfigured === true;
-    byId('walkingState').textContent = walkingEnabled ? 'TMAP 도보 경로 사용 가능' : '도보 시간 계산 비활성';
     if (walkingEnabled && !routeInitialized) {
       routeInitialized = true;
       setupPublicRoute();
     }
   } catch {
     inventoryPublic = null;
-    byId('walkingState').textContent = '도보 경로 상태 미확인';
   }
-  showAccess();
-}
-
-async function showInventory() {
-  const node = byId('coverageSummary');
-  const current = new AbortController();
-  coverageRequest = current;
-  node.hidden = false;
-  node.textContent = '수집한 지역을 확인하고 있어요.';
-  try {
-    const data = await request('/api/status?scope=coverage', undefined, current.signal);
-    if (current.signal.aborted) return;
-    if (data.state === 'private') {
-      inventoryPublic = false;
-      if (signedIn) login.expire();
-      else { showAccess(); showIdleStatus(); }
-      return;
-    }
-    node.textContent = searchInfo.inventorySummary(data);
-  } catch { if (!current.signal.aborted) node.textContent = '보유 지역과 매물 수를 확인할 수 없어요.'; }
 }
 
 async function setupPublicRoute() {
@@ -178,7 +141,6 @@ async function setupPublicRoute() {
 const login = startSearchLogin(value => {
   signedIn = value;
   if (!value) clearSearch();
-  showAccess();
   if (value && waitingSearch && !active) {
     const {query, destinationId, lookupQuery} = waitingSearch;
     waitingSearch = null;
@@ -323,7 +285,6 @@ function listingCard(room, conditions, unknown) {
   }));
   if (unknown && room.missingConditions?.length) card.append(element('p', 'listing-meta', '검색 당시 미확인 · ' + room.missingConditions.join(', ')));
   if (room.options?.length) card.append(element('p', 'listing-meta', room.options.join(' · ')));
-  card.append(element('p', 'listing-meta', searchInfo.listingRecord(room)));
   if (maps) card.append(maps);
   const source = safeLink('원본 매물 확인 ↗', room.url, 'listing-link');
   if (source) card.append(source);
@@ -373,7 +334,7 @@ async function loadListings(query, turn, conditions, destinationId) {
   if (turn !== revision) return;
   const c = data.conditions;
   const unverified = data.unverified.length;
-  const summary = searchInfo.resultStatus(data);
+  const summary = searchInfo.resultStatus(data, {includeRegionSummary:false});
   byId('results').dataset.state = summary.state;
   const mobility = searchInfo.mobility(c, walkingEnabled);
   resultStatus.textContent = [summary.text, mobility].filter(Boolean).join(' ');
@@ -408,7 +369,6 @@ function handleFailure(error, turn) {
     inventoryPublic = false;
     if (signedIn) { login.expire(); return; }
     clearCards();
-    showAccess();
     showIdleStatus();
   } else {
     conversation.textContent = error.message || '검색을 마치지 못했어요. 다시 시도해 주세요.';

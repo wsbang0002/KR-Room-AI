@@ -35,7 +35,7 @@ const searchInfo = (() => {
     if (data.state === 'partial') rows.push('일부 자료의 조회가 지연되고 있어요.');
     return rows.join('\n') || (data.state === 'empty' ? '현재 보유한 수집 매물이 없어요.' : '보유 자료의 지역을 확인할 수 없어요.');
   }
-  function resultStatus(data) {
+  function resultStatus(data, {includeRegionSummary=true}={}) {
     const coverage = data.coverage;
     const matched = data.results?.length || 0;
     const pending = data.unverified?.length || 0;
@@ -52,7 +52,7 @@ const searchInfo = (() => {
       else if (coverage?.count > 0) message.push(`이 지역의 보유 매물 ${coverage.count}건 중 현재 조건에 맞는 매물이 없어요. 지역이나 예산을 바꿔 보세요.`);
       else message.push('현재 이 조건에 맞는 매물이 없어요.');
     }
-    if (coverage?.count > 0) message.push(inventoryRow(coverage));
+    if (includeRegionSummary && coverage?.count > 0) message.push(inventoryRow(coverage));
     else if (coverage?.state === 'unknown-region' && pending) message.push('자료의 지역을 확인할 수 없어 조건 충족 여부가 미확인이에요.');
     if (coverage?.stale) message.push('이전에 수집한 자료를 사용했어요.');
     if (coverage?.state === 'partial' && (matched || pending)) message.push('일부 자료만 조회했어요.');

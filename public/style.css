@@ -157,9 +157,9 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .result-symbol { display: grid; place-items: center; flex-shrink: 0; width: 39px; height: 39px; border-radius: 50%; background: var(--soft); color: var(--link); }
 .result-symbol i { position: relative; display: block; width: 15px; height: 18px; margin-top: -3px; border: 1.7px solid currentColor; border-radius: 50% 50% 50% 2px; transform: rotate(-45deg); }
 .result-symbol i::after { content: ''; position: absolute; top: 4px; left: 3.8px; height: 5px; width: 5px; border: 1px solid currentColor; border-radius: 50%; }
-.results[data-state="results"] .result-state { min-height: 0; padding: 0; margin-bottom: 18px; background: none; border: 0; }
-.results[data-state="results"] .result-symbol { display: none; }
-.results[data-state="results"] .result-state p, .muted { color: var(--muted); }
+.results[data-state="ready"] .result-state,
+.results[data-state="results"] .result-state { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; overflow: hidden; clip-path: inset(50%); }
+.muted { color: var(--muted); }
 .listings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .listings:not(:empty) { margin-top: 16px; }
 .listing-card { min-width: 0; padding: clamp(18px, 2vw, 27px); border: 1px solid var(--line); border-radius: 11px; overflow-wrap: anywhere; background: var(--surface); }
@@ -249,20 +249,6 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
   .arrow { transition: none; }
 }
 
-/* The live scope sits beside the input so that preparation and an empty search are distinct. */
-.service-scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3px 17px;
-  margin: -3px 0 15px;
-  color: var(--muted);
-  font-size: .81rem;
-  line-height: 1.6;
-}
-#publicationState { color: var(--ink); font-weight: 650; }
-#walkingState, #coverageSummary { position: relative; }
-#coverageSummary:not([hidden]) { flex-basis: 100%; }
 .interpretation-note:not(:empty) { margin-top: 10px; color: var(--muted); font-size: .84rem; }
 .public-route {
   display: grid;
@@ -323,7 +309,6 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
   .account-action { min-height: 44px; padding-inline: 14px; }
   .main-nav { grid-column: 1 / -1; grid-row: 2; display: flex; margin: 0; gap: clamp(19px, 7vw, 35px); }
   .main-nav a { min-height: 44px; padding-inline: 2px; font-size: .84rem; }
-  .service-scope { margin-bottom: 11px; gap: 2px 12px; font-size: .77rem; }
   .public-route { padding: 16px 14px; }
   .public-route-form { flex-wrap: wrap; }
   .route-fields { flex-basis: 100%; align-items: stretch; }

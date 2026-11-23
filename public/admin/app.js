@@ -31,7 +31,7 @@ function clearSession(){
  credential='';liveCollection=false;confirmed=null;pending=null;lastPayload=null;
  $('adminKey').value='';query.value='';destinationInput.value='';
  clearPlaces();
- for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','collectionBudgetResult','collectionProgress','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
+ for(const id of ['status','cards','unknownCards','conditions','integrationResult','comparisonResult','collectionBudgetResult','collectionProgress','syncExistingResult','regionChoices','loginMessage','inventorySummary','interpretationNote'])$(id).replaceChildren();
  for(const id of ['map','endMap'])$(id).removeAttribute('src');
  for(const id of ['workspace','signOut','unknownTitle','mapPanel'])$(id).hidden=true;
  $('comparisonResult').hidden=true;
@@ -289,6 +289,7 @@ function busy(active){
  $('checkConnections').disabled=active||!credential;
  $('checkCollectionBudget').disabled=active||!credential;
  $('recoverCollection').disabled=active||!credential;
+ $('syncExisting').disabled=active||!credential;
  $('stopCollectionView').hidden=!active||collectionOperation!==controller;
  $('compareGemini').disabled=active||!credential;
  $('findDestinations').disabled=active||!credential;
@@ -475,6 +476,51 @@ $('checkCollectionBudget').onclick=async()=>{
  }finally{
   if(controller===operation){
    if(operation.signal.aborted&&credential)output.textContent='수집 한도 조회를 취소했습니다.';
+   busy(false);
+  }
+ }
+};
+function syncSummary({dataset,previous,database,issues=[]}){
+ const count=n=>Number.isSafeInteger(n)&&n>=0?n+'건':'미확인';
+ const lines=[];
+ if(dataset){
+  lines.push('기존 API '+count(dataset.sourceRows)+' · 고유 매물 '+count(dataset.uniqueListings)+' · 제외 '+count(dataset.skippedRows));
+  lines.push('DB 신규 '+count(dataset.inserted)+' · 갱신 '+count(dataset.updated)+' · 유지 '+count(dataset.unchanged));
+  lines.push('저장 검증 '+(dataset.verified===true?'완료':'미완료')+' · 확인 '+count(dataset.verifiedPresent)+' · 누락 '+count(dataset.verifiedMissing));
+ }else lines.push('기존 API 매물 반영 결과 미확인');
+ if(previous){
+  const label=({IDLE:'진행 중인 작업 없음',UNIDENTIFIED:'실행 식별 불가',UNCONFIRMED:'실행 미확인',UNAVAILABLE:'조회 불가'})[previous.state]||collectionStates[previous.state]||'상태 미확인';
+  let detail='이전 수집 · '+label;
+  if(Number.isInteger(previous.persistedCount))detail+=' · 저장 '+count(previous.persistedCount);
+  if(terminalStates.has(previous.state))detail+=previous.costSettled===true?' · 비용 정산 완료':' · 비용 정산 미확인';
+  lines.push(detail);
+ }
+ lines.push(database?'DB 전체 '+count(database.total)+' · '+(database.location||'조회 지역')+' '+count(database.regionCount)+' · 지역 미확인 '+count(database.unlocated):'DB 전체 및 조회 지역의 매물 수 미확인');
+ if(Array.isArray(issues)){
+  for(const issue of issues){
+   const message=typeof issue==='string'?issue:issue?.message;
+   if(typeof message==='string'&&message.trim())lines.push('확인 필요 · '+message);
+  }
+ }
+ return lines.join('\n');
+}
+$('syncExisting').onclick=async()=>{
+ if(!credential||$('syncExisting').disabled)return;
+ controller?.abort();
+ const operation=new AbortController();controller=operation;
+ const output=$('syncExistingResult');
+ busy(true);
+ output.textContent='기존 매물을 Redis에 반영하고 저장 결과를 확인하고 있습니다…';
+ try{
+  const body={action:'sync-existing'};
+  if(confirmed?.location)body.location=confirmed.location;
+  const result=await request('/api/collect',{method:'POST',body:JSON.stringify(body),signal:operation.signal});
+  if(!operation.signal.aborted)output.textContent=syncSummary(result);
+ }catch(error){
+  if(!operation.signal.aborted)output.textContent='DB 반영 결과를 확인할 수 없습니다. '+error.message;
+ }finally{
+  if(controller===operation){
+   if(operation.signal.aborted&&credential)output.textContent='화면 조회를 중단했습니다. DB 반영 결과는 다시 확인해 주세요.';
    busy(false);
   }
  }

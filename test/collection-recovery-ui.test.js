@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const script=readFileSync(new URL('../public/admin/app.js',import.meta.url),'utf8');
 const credential='recovery-unit-test-credential';
 
-function page(respond){
+function page(respond,{sync=false}={}){
  const nodes=new Map(),reads=[];
  function field(id){
   if(!nodes.has(id))nodes.set(id,{
@@ -21,6 +21,13 @@ function page(respond){
   searchInfo:{inventorySummary:()=>''},
   fetch:async(path,options)=>{
    assert.equal(options.headers.Authorization,'Bearer '+credential);
+   if(path==='/api/collect'&&sync){
+    assert.equal(options.method,'POST');
+    assert.deepEqual(JSON.parse(options.body),{action:'sync-existing'});
+    reads.push(path);
+    const result=await respond(options);
+    return result instanceof Response?result:Response.json(result);
+   }
    assert.equal(options.method||'GET','GET');
    if(path==='/api/status?scope=admin')return Response.json({adminAuthenticated:true,liveCollectionEnabled:false});
    if(path==='/api/status?scope=coverage')return Response.json({});
@@ -98,4 +105,39 @@ test('a run without an ID can be located in Apify by its original reservation ti
    assert.equal(field('collectionRunLink').href,'https://console.apify.com/actors/runs');
   }
  }
+});
+
+test('admin sync uses only the explicit dataset action with live collection off and no selected query',async()=>{
+ const result={dataset:{sourceRows:12,uniqueListings:10,inserted:3,updated:2,unchanged:5,
+  verifiedPresent:10,verifiedMissing:0,skippedRows:1,verified:true},
+  previous:{state:'SUCCEEDED',persistedCount:2,costSettled:true},
+  database:{total:48,location:'원주시 흥업면',regionCount:0,unlocated:3},issues:[]};
+ const {field,reads,login}=page(()=>result,{sync:true});
+ await login();
+ assert.equal(field('query').value,'');
+ assert.equal(field('syncExisting').disabled,false);
+ await field('syncExisting').onclick();
+ const message=field('syncExistingResult').textContent;
+ for(const expected of ['기존 API 12건','고유 매물 10건','DB 신규 3건','갱신 2건','유지 5건',
+  '저장 검증 완료','제외 1건','비용 정산 완료','DB 전체 48건','원주시 흥업면 0건','지역 미확인 3건']){
+  assert.ok(message.includes(expected),expected);
+ }
+ assert.equal(field('collect').disabled,true);
+ assert.deepEqual(reads,['/api/collect']);
+});
+
+test('partial and failed sync checks do not claim the database has zero listings',async()=>{
+ const partial={dataset:null,previous:{state:'UNAVAILABLE'},database:null,issues:['일부 데이터 조회 지연']};
+ const responses=[partial,Response.json({error:'서버 연결 오류'},{status:503})];
+ const {field,reads,login}=page(()=>responses.shift(),{sync:true});
+ await login();
+ await field('syncExisting').onclick();
+ assert.match(field('syncExistingResult').textContent,/반영 결과 미확인/);
+ assert.match(field('syncExistingResult').textContent,/이전 수집 · 조회 불가/);
+ assert.match(field('syncExistingResult').textContent,/일부 데이터 조회 지연/);
+ assert.doesNotMatch(field('syncExistingResult').textContent,/0건/);
+ await field('syncExisting').onclick();
+ assert.match(field('syncExistingResult').textContent,/서버 연결 오류/);
+ assert.equal(field('syncExisting').disabled,false);
+ assert.equal(reads.length,2);
 });

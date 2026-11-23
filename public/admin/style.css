@@ -93,3 +93,7 @@ iframe { border: 0; width: 100%; height: 230px; margin-block-start: 8px; }
 #collectionProgress { overflow-wrap: anywhere; }
 #collectionProgress:not(:empty) { padding: 11px 13px; border-inline-start: 3px solid var(--action); background: var(--field); }
 #collectionProgress:empty, #collectionBudgetResult:empty { display: none; }
+
+.sync-panel { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+#syncExistingResult { margin-bottom: 0; white-space: pre-line; overflow-wrap: anywhere; }
+#syncExistingResult:empty { display: none; }

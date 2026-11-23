@@ -1,4 +1,5 @@
 import {INSPECT_MONTHLY,MONTHLY_RESERVE,SETTLE} from '../lib/monthly-budget.js';
+import {IMPORT_DATASET_LISTING} from '../lib/dataset-sync.js';
 import {COMMIT_COLLECTION} from '../lib/collection.js';
 import {RESERVE} from '../lib/store.js';
 export class FakeRedis {
@@ -39,6 +40,13 @@ export class FakeRedis {
   this.write(observedKey,String(observed),ttl);
   return 'RESERVED';
  }
+ if(lua===IMPORT_DATASET_LISTING){
+  const current=this.read(keys[0]);
+  if(args[0]==='new'?current!==undefined:current!==args[1])return 0;
+  const index=this.read(keys[1])||new Set();
+  index.add(keys[0]);this.write(keys[1],index);
+  this.write(keys[0],args[2]);return 1;
+ }
  if(lua===COMMIT_COLLECTION){
   if(this.read(keys[0])!==args[0])return 0;
   this.data.set(keys[0],args[1]);
@@ -68,7 +76,7 @@ export class FakeRedis {
   this.write(keys[0],args[1],args[2]);return 1;
  }
  // Listing UPSERT script. Keep its first-seen timestamp while updating prices.
- if(lua.includes('item.firstCollectedAt')){if(keys[3]&&this.read(keys[3])!==args[2])return 0;const prev=this.read(keys[0]);const item=JSON.parse(args[0]);if(prev)item.firstCollectedAt=JSON.parse(prev).firstCollectedAt||item.firstCollectedAt;this.write(keys[0],JSON.stringify(item));const index=this.read(keys[1])||new Set();index.add(keys[0]);this.write(keys[1],index);this.write(keys[2],args[1]);return 1;}
+ if(lua.includes('item.firstCollectedAt')){if(keys[3]&&this.read(keys[3])!==args[2])return 0;const prev=this.read(keys[0]);const item=JSON.parse(args[0]);if(prev){const old=JSON.parse(prev);if(old.sourceDatasetId&&typeof old.lastSeenAt==='string'&&old.lastSeenAt>args[3])return 1;item.firstCollectedAt=old.firstCollectedAt||item.firstCollectedAt;}this.write(keys[0],JSON.stringify(item));const index=this.read(keys[1])||new Set();index.add(keys[0]);this.write(keys[1],index);this.write(keys[2],args[1]);return 1;}
  throw Error('Unknown test Lua script');
  }
  async command(args){return this.raw(args);}

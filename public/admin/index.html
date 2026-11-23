@@ -89,6 +89,11 @@
       <p id="collectionBudgetResult" role="status" aria-atomic="true"></p>
       <p id="collectionProgress" role="status" aria-atomic="true"></p>
       <a id="collectionRunLink" href="https://console.apify.com/actors/runs" target="_blank" rel="noopener noreferrer" hidden>Apify 실행 이력 열기</a>
+      <div class="sync-panel">
+        <button id="syncExisting" type="button" aria-controls="syncExistingResult" disabled>기존 API 매물 DB 반영</button>
+        <p class="hint">이미 수집한 매물을 Redis에 반영합니다. 새 Apify 수집을 시작하지 않습니다.</p>
+        <p id="syncExistingResult" role="status" aria-atomic="true"></p>
+      </div>
     </section>
   </div>
 </main>

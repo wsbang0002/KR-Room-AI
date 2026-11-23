@@ -31,7 +31,7 @@
     }
   ],
   "framework": null,
-  "buildCommand": "node scripts/sync-existing-listings.js --production-backfill",
+  "buildCommand": "",
   "rewrites": [
     {
       "source": "/admin",
